@@ -658,6 +658,7 @@ class PodmanWorker(ContainerWorker):
                         changed=True,
                         msg="Container timed out",
                         **self.check_container().attrs)
+                self.wait_for_healthy()
 
         if not self.params.get('detach'):
             container = self.check_container()
@@ -725,6 +726,7 @@ class PodmanWorker(ContainerWorker):
                     changed=True,
                     msg="Container timed out",
                     **container.attrs)
+            self.wait_for_healthy()
 
     def create_volume(self, name=None):
         volume_name = name if name else self.params.get('name')
