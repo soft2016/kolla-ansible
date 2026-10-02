@@ -1,0 +1,4 @@
+---
+- name: Pull hacluster images
+  ansible.builtin.import_role:
+    role: service-images-pull

@@ -1,0 +1,19 @@
+---
+- name: Register cyborg in Keystone
+  ansible.builtin.import_tasks: register.yml
+
+- name: Configure cyborg
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check cyborg containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone cyborg repository
+  ansible.builtin.include_tasks: clone.yml
+  when: cyborg_dev_mode | bool
+
+- name: Bootstrap cyborg service
+  ansible.builtin.import_tasks: bootstrap.yml
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

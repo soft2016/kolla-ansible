@@ -1,0 +1,4 @@
+---
+- name: Checking OpenSearch containers
+  ansible.builtin.import_role:
+    role: service-check

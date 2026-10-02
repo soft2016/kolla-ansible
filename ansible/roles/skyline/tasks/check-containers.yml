@@ -1,0 +1,4 @@
+---
+- name: Check skyline containers
+  ansible.builtin.import_role:
+    name: service-check-containers

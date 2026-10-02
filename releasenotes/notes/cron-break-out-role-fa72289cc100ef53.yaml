@@ -1,0 +1,5 @@
+---
+upgrade:
+  - |
+    The ``cron`` tasks now live in their own Ansible role instead of being
+    shipped inside ``common``.

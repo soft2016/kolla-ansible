@@ -1,0 +1,101 @@
+---
+- name: Get contents of clouds.yaml
+  ansible.builtin.slurp:
+    src: /etc/kolla/clouds.yaml
+  register: clouds_yaml
+
+- name: Query dashboard and check that the returned page looks like a login page
+  vars:
+    clouds: "{{ clouds_yaml['content'] | b64decode | from_yaml }}"
+    url_scheme: "{{ clouds.clouds['kolla-admin'].auth.auth_url | urlsplit('scheme') }}"
+    url_host: "{{ kolla_external_vip_address | default(kolla_internal_vip_address) }}"
+  ansible.builtin.uri:
+    url: "{{ url_scheme + '://' + url_host }}"
+    ca_path: "{{ clouds.clouds['kolla-admin'].cacert | default(omit) }}"
+    follow_redirects: "all"
+    return_content: true
+    validate_certs: "{{ 'false' if scenario == 'lets-encrypt' else 'true' }}"
+  register: dashboard_output
+  until: dashboard_output.content.find('Login') != -1
+  retries: 30
+  delay: 10
+
+- name: Check if testinfra subdirectory exists
+  ansible.builtin.stat:
+    path: "{{ zuul.project.src_dir }}/tests/testinfra"
+  register: testinfra_dir
+
+- name: Run testinfra tests
+  when: testinfra_dir.stat.exists
+  block:
+    - name: Ensure testinfra subdirectory exists
+      ansible.builtin.file:
+        path: "/home/zuul/testinfra"
+        state: directory
+        mode: "0755"
+
+    - name: Ensure screenshots directory exists
+      ansible.builtin.file:
+        path: "/home/zuul/testinfra/screenshots"
+        state: directory
+        mode: "0755"
+
+    - name: Ensure required packages are installed
+      ansible.builtin.pip:
+        name:
+          - pytest-html
+          - pytest-testinfra
+          - selenium
+        virtualenv: "{{ kolla_ansible_venv_path }}"
+        virtualenv_command: "python3 -m venv"
+
+    - name: Run Selenium Firefox container (Docker)
+      become: true
+      when: container_engine == 'docker'
+      community.docker.docker_container:
+        name: "selenium"
+        detach: true
+        image: "quay.io/opendevmirror/selenium-standalone-firefox:latest"
+        network_mode: host
+        env:
+          SE_NODE_PORT: "4500"
+          SE_OPTS: "--port 4500"
+      register: docker_result
+      retries: 5
+      delay: 3
+      until: docker_result is succeeded
+
+    - name: Run Selenium Firefox container (Podman)
+      become: true
+      when: container_engine == 'podman'
+      containers.podman.podman_container:
+        name: "selenium"
+        detach: true
+        image: "quay.io/opendevmirror/selenium-standalone-firefox:latest"
+        network_mode: host
+        env:
+          SE_NODE_PORT: "4500"
+          SE_OPTS: "--port 4500"
+      register: podman_result
+      retries: 5
+      delay: 3
+      until: podman_result is succeeded
+
+    - name: Wait for port 4500 to be up
+      ansible.builtin.wait_for:
+        port: 4500
+
+    - name: Run testinfra tests
+      environment:
+        HORIZON_PROTO: "{{ 'https' if tls_enabled | bool else 'http' }}"
+        SCENARIO: "{{ scenario }}"
+      ansible.builtin.shell:
+        cmd: >
+          . {{ kolla_ansible_venv_path }}/bin/activate &&
+          export SELENIUM_REMOTE_URL="http://localhost:4500/wd/hub" &&
+          py.test
+          --junit-xml /home/zuul/testinfra/testinfra-junit.xml -o junit_family=xunit1
+          --html=/home/zuul/testinfra/test-results-testinfra.html --self-contained-html
+          -v tests/testinfra
+        chdir: "{{ zuul.project.src_dir }}"
+      changed_when: false

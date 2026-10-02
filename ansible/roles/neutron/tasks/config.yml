@@ -1,49 +1,63 @@
 ---
-- name: Setting sysctl values
-  become: true
-  vars:
-    neutron_l3_agent: "{{ neutron_services['neutron-l3-agent'] }}"
-  sysctl: name={{ item.name }} value={{ item.value }} sysctl_set=yes
-  with_items:
-    - { name: "net.ipv4.ip_forward", value: 1}
-    - { name: "net.ipv4.conf.all.rp_filter", value: "{{ neutron_l3_agent_host_rp_filter_mode }}"}
-    - { name: "net.ipv4.conf.default.rp_filter", value: "{{ neutron_l3_agent_host_rp_filter_mode }}"}
-  when:
-    - set_sysctl | bool
-    - (neutron_l3_agent.enabled | bool and neutron_l3_agent.host_in_groups | bool)
-
 - name: Ensuring config directories exist
   become: true
-  file:
+  ansible.builtin.file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
     owner: "{{ config_owner_user }}"
     group: "{{ config_owner_group }}"
     mode: "0770"
-  when:
-    - item.value.enabled | bool
-    - item.value.host_in_groups | bool
-  with_dict: "{{ neutron_services }}"
+  with_dict: "{{ neutron_services | select_services_enabled_and_mapped_to_host }}"
 
 - name: Check if extra ml2 plugins exists
-  local_action: find path="{{ node_custom_config }}/neutron/plugins/"
-  run_once: True
-  changed_when: False
+  ansible.builtin.find:
+    path: "{{ node_custom_config }}/neutron/plugins/"
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
   register: check_extra_ml2_plugins
+
+- name: Copying over TLS certificates
+  ansible.builtin.include_tasks: copy-certs.yml
+  when:
+    - neutron_copy_certs | bool
+
+- name: Check if policies shall be overwritten
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  delegate_to: localhost
+  run_once: true
+  register: neutron_policy
+  with_first_found:
+    - files: "{{ supported_policy_format_list }}"
+      paths:
+        - "{{ node_custom_config }}/neutron/"
+      skip: true
+
+- name: Set neutron policy file
+  ansible.builtin.set_fact:
+    neutron_policy_file: "{{ neutron_policy.results.0.stat.path | basename }}"
+    neutron_policy_file_path: "{{ neutron_policy.results.0.stat.path }}"
+  when:
+    - neutron_policy.results | length > 0
+
+- name: Copying over existing policy file
+  ansible.builtin.template:
+    src: "{{ neutron_policy_file_path }}"
+    dest: "{{ node_config_directory }}/{{ item.key }}/{{ neutron_policy_file }}"
+    mode: "0660"
+  become: true
+  when:
+    - neutron_policy_file is defined
+  with_dict: "{{ neutron_services | select_services_enabled_and_mapped_to_host }}"
 
 - name: Copying over config.json files for services
   become: true
-  template:
+  ansible.builtin.template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
-    mode: "0770"
-  register: neutron_config_jsons
-  when:
-    - item.value.enabled | bool
-    - item.value.host_in_groups | bool
-  with_dict: "{{ neutron_services }}"
-  notify:
-    - "Restart {{ item.key }} container"
+    mode: "0660"
+  with_dict: "{{ neutron_services | select_services_enabled_and_mapped_to_host }}"
 
 - name: Copying over neutron.conf
   become: true
@@ -51,16 +65,21 @@
     service_name: "{{ item.key }}"
     services_need_neutron_conf:
       - "ironic-neutron-agent"
-      - "neutron-dhcp-agent"
-      - "neutron-l3-agent"
-      - "neutron-linuxbridge-agent"
-      - "neutron-metadata-agent"
-      - "neutron-openvswitch-agent"
-      - "neutron-openvswitch-agent-xenapi"
-      - "neutron-server"
-      - "neutron-lbaas-agent"
       - "neutron-bgp-dragent"
-      - "neutron-infoblox-ipam-agent"
+      - "neutron-dhcp-agent"
+      - "neutron-eswitchd"
+      - "neutron-l3-agent"
+      - "neutron-metadata-agent"
+      - "neutron-metering-agent"
+      - "neutron-mlnx-agent"
+      - "neutron-openvswitch-agent"
+      - "neutron-ovn-agent"
+      - "neutron-ovn-maintenance-worker"
+      - "neutron-ovn-metadata-agent"
+      - "neutron-ovn-vpn-agent"
+      - "neutron-periodic-worker"
+      - "neutron-rpc-server"
+      - "neutron-server"
       - "neutron-sriov-agent"
   merge_configs:
     sources:
@@ -71,67 +90,50 @@
       - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/neutron.conf"
     dest: "{{ node_config_directory }}/{{ item.key }}/neutron.conf"
     mode: "0660"
-  register: neutron_confs
   when:
-    - item.value.enabled | bool
-    - item.value.host_in_groups | bool
     - item.key in services_need_neutron_conf
-  with_dict: "{{ neutron_services }}"
-  notify:
-    - "Restart {{ item.key }} container"
-
-- name: Copying over neutron_lbaas.conf
-  become: true
-  vars:
-    service_name: "{{ item.key }}"
-    services_need_neutron_lbaas_conf:
-      - "neutron-server"
-      - "neutron-lbaas-agent"
-  merge_configs:
-    sources:
-      - "{{ role_path }}/templates/neutron_lbaas.conf.j2"
-      - "{{ node_custom_config }}/neutron/neutron_lbaas.conf"
-      - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/neutron_lbaas.conf"
-    dest: "{{ node_config_directory }}/{{ item.key }}/neutron_lbaas.conf"
-  register: neutron_lbaas_confs
-  when:
-    - item.value.enabled | bool
-    - item.value.host_in_groups | bool
-    - item.key in services_need_neutron_lbaas_conf
-  with_dict: "{{ neutron_services }}"
-  notify:
-    - "Restart {{ item.key }} container"
+  with_dict: "{{ neutron_services | select_services_enabled_and_mapped_to_host }}"
 
 - name: Copying over neutron_vpnaas.conf
   become: true
   vars:
     service_name: "{{ item.key }}"
     services_need_neutron_vpnaas_conf:
-      - "neutron-server"
       - "neutron-l3-agent"
+      - "neutron-ovn-maintenance-worker"
+      - "neutron-periodic-worker"
+      - "neutron-rpc-server"
+      - "neutron-server"
   merge_configs:
     sources:
       - "{{ role_path }}/templates/neutron_vpnaas.conf.j2"
       - "{{ node_custom_config }}/neutron/neutron_vpnaas.conf"
       - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/neutron_vpnaas.conf"
     dest: "{{ node_config_directory }}/{{ item.key }}/neutron_vpnaas.conf"
-  register: neutron_vpnaas_confs
+    mode: "0660"
   when:
-    - item.value.enabled | bool
-    - item.value.host_in_groups | bool
+    - enable_neutron_vpnaas | bool
     - item.key in services_need_neutron_vpnaas_conf
-  with_dict: "{{ neutron_services }}"
-  notify:
-    - "Restart {{ item.key }} container"
+  with_dict: "{{ neutron_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: Copying over ssh key
+  become: true
+  vars:
+    service: "{{ neutron_services['neutron-server'] }}"
+  ansible.builtin.template:
+    src: "id_rsa"
+    dest: "{{ node_config_directory }}/neutron-server/id_rsa"
+    mode: "0600"
+  when: service | service_enabled_and_mapped_to_host
 
 - name: Copying over ml2_conf.ini
   become: true
   vars:
     service_name: "{{ item.key }}"
     services_need_ml2_conf_ini:
-      - "neutron-linuxbridge-agent"
-      - "neutron-openvswitch-agent"
-      - "neutron-infoblox-ipam-agent"
+      - "neutron-ovn-maintenance-worker"
+      - "neutron-periodic-worker"
+      - "neutron-rpc-server"
       - "neutron-server"
   merge_configs:
     sources:
@@ -140,62 +142,71 @@
       - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/ml2_conf.ini"
     dest: "{{ node_config_directory }}/{{ service_name }}/ml2_conf.ini"
     mode: "0660"
-  register: neutron_ml2_confs
   when:
     - item.key in services_need_ml2_conf_ini
-    - item.value.enabled | bool
-    - item.value.host_in_groups | bool
-  with_dict: "{{ neutron_services }}"
-  notify:
-    - "Restart {{ item.key }} container"
+  with_dict: "{{ neutron_services | select_services_enabled_and_mapped_to_host }}"
 
-- name: Copying over ml2_conf.ini for XenAPI
+- name: Copying over openvswitch_agent.ini
   become: true
   vars:
-    service_name: "{{ item.key }}"
-    services_need_ml2_conf_ini:
-      - "neutron-openvswitch-agent-xenapi"
-    os_xenapi_variables: "{{ lookup('file', xenapi_facts_root + '/' + inventory_hostname + '/' + xenapi_facts_file) | from_json }}"
+    service_name: "neutron-openvswitch-agent"
+    service: "{{ neutron_services[service_name] }}"
   merge_configs:
     sources:
-      - "{{ role_path }}/templates/ml2_conf.ini.j2"
-      - "{{ role_path }}/templates/ml2_conf_xenapi.ini.j2"
-      - "{{ node_custom_config }}/neutron/ml2_conf.ini"
-      - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/ml2_conf.ini"
-      - "{{ node_custom_config }}/neutron/{{ service_name }}/ml2_conf.ini"
-    dest: "{{ node_config_directory }}/{{ service_name }}/ml2_conf.ini"
+      - "{{ role_path }}/templates/openvswitch_agent.ini.j2"
+      - "{{ node_custom_config }}/neutron/openvswitch_agent.ini"
+      - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/openvswitch_agent.ini"
+    dest: "{{ node_config_directory }}/{{ service_name }}/openvswitch_agent.ini"
     mode: "0660"
-  register: neutron_ml2_confs
-  when:
-    - item.key in services_need_ml2_conf_ini
-    - item.value.enabled | bool
-    - item.value.host_in_groups | bool
-  with_dict: "{{ neutron_services }}"
-  notify:
-    - "Restart {{ item.key }} container"
+  when: service | service_enabled_and_mapped_to_host
 
 - name: Copying over sriov_agent.ini
+  become: true
   vars:
     service_name: "neutron-sriov-agent"
-    neutron_sriov_agent: "{{ neutron_services[service_name] }}"
+    service: "{{ neutron_services[service_name] }}"
   merge_configs:
     sources:
       - "{{ role_path }}/templates/sriov_agent.ini.j2"
       - "{{ node_custom_config }}/neutron/sriov_agent.ini"
       - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/sriov_agent.ini"
     dest: "{{ node_config_directory }}/{{ service_name }}/sriov_agent.ini"
-  register: neutron_sriov_agent_ini
-  when:
-    - neutron_sriov_agent.enabled | bool
-    - neutron_sriov_agent.host_in_groups | bool
-  notify:
-    - "Restart {{ service_name }} container"
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
+
+- name: Copying over mlnx_agent.ini
+  become: true
+  vars:
+    service_name: "neutron-mlnx-agent"
+    service: "{{ neutron_services[service_name] }}"
+  merge_configs:
+    sources:
+      - "{{ role_path }}/templates/mlnx_agent.ini.j2"
+      - "{{ node_custom_config }}/neutron/mlnx_agent.ini"
+      - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/mlnx_agent.ini"
+    dest: "{{ node_config_directory }}/{{ service_name }}/mlnx_agent.ini"
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
+
+- name: Copying over eswitchd.conf
+  become: true
+  vars:
+    service_name: "neutron-eswitchd"
+    service: "{{ neutron_services[service_name] }}"
+  merge_configs:
+    sources:
+      - "{{ role_path }}/templates/eswitchd.conf.j2"
+      - "{{ node_custom_config }}/neutron/eswitchd.conf"
+      - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/eswitchd.conf"
+    dest: "{{ node_config_directory }}/{{ service_name }}/eswitchd.conf"
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
 
 - name: Copying over dhcp_agent.ini
   become: true
   vars:
     service_name: "neutron-dhcp-agent"
-    neutron_dhcp_agent: "{{ neutron_services[service_name] }}"
+    service: "{{ neutron_services[service_name] }}"
   merge_configs:
     sources:
       - "{{ role_path }}/templates/dhcp_agent.ini.j2"
@@ -203,28 +214,22 @@
       - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/dhcp_agent.ini"
     dest: "{{ node_config_directory }}/{{ service_name }}/dhcp_agent.ini"
     mode: "0660"
-  register: dhcp_agent_ini
-  when:
-    - neutron_dhcp_agent.enabled | bool
-    - neutron_dhcp_agent.host_in_groups | bool
-  notify:
-    - "Restart {{ service_name }} container"
+  when: service | service_enabled_and_mapped_to_host
 
 - name: Copying over dnsmasq.conf
   become: true
   vars:
     service_name: "neutron-dhcp-agent"
-    neutron_dhcp_agent: "{{ neutron_services[service_name] }}"
-  template:
-    src: "dnsmasq.conf.j2"
+    service: "{{ neutron_services[service_name] }}"
+  ansible.builtin.template:
+    src: "{{ item }}"
     dest: "{{ node_config_directory }}/{{ service_name }}/dnsmasq.conf"
     mode: "0660"
-  register: dnsmasq_conf
-  when:
-    - neutron_dhcp_agent.enabled | bool
-    - neutron_dhcp_agent.host_in_groups | bool
-  notify:
-    - "Restart {{ service_name }} container"
+  with_first_found:
+    - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/dnsmasq.conf"
+    - "{{ node_custom_config }}/neutron/dnsmasq.conf"
+    - "dnsmasq.conf.j2"
+  when: service | service_enabled_and_mapped_to_host
 
 - name: Copying over l3_agent.ini
   become: true
@@ -239,14 +244,9 @@
       - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/l3_agent.ini"
     dest: "{{ node_config_directory }}/{{ service_name }}/l3_agent.ini"
     mode: "0660"
-  register: neutron_l3_agent_inis
   when:
     - item.key in services_need_l3_agent_ini
-    - item.value.enabled | bool
-    - item.value.host_in_groups | bool
-  with_dict: "{{ neutron_services }}"
-  notify:
-    - "Restart {{ item.key }} container"
+  with_dict: "{{ neutron_services | select_services_enabled_and_mapped_to_host }}"
 
 - name: Copying over fwaas_driver.ini
   become: true
@@ -255,171 +255,135 @@
     services_need_fwaas_driver_ini:
       - "neutron-server"
       - "neutron-l3-agent"
+      - "neutron-ovn-maintenance-worker"
+      - "neutron-periodic-worker"
+      - "neutron-rpc-server"
   merge_configs:
     sources:
       - "{{ role_path }}/templates/fwaas_driver.ini.j2"
       - "{{ node_custom_config }}/neutron/fwaas_driver.ini"
     dest: "{{ node_config_directory }}/{{ service_name }}/fwaas_driver.ini"
     mode: "0660"
-  register: neutron_fwaas_driver_inis
   when:
+    - enable_neutron_fwaas | bool
     - item.key in services_need_fwaas_driver_ini
-    - item.value.enabled | bool
-    - item.value.host_in_groups | bool
-  with_dict: "{{ neutron_services }}"
-  notify:
-    - "Restart {{ item.key }} container"
+  with_dict: "{{ neutron_services | select_services_enabled_and_mapped_to_host }}"
 
 - name: Copying over metadata_agent.ini
   become: true
   vars:
     service_name: "neutron-metadata-agent"
-    neutron_metadata_agent: "{{ neutron_services[service_name] }}"
+    service: "{{ neutron_services[service_name] }}"
   merge_configs:
     sources:
       - "{{ role_path }}/templates/metadata_agent.ini.j2"
       - "{{ node_custom_config }}/neutron/metadata_agent.ini"
     dest: "{{ node_config_directory }}/{{ service_name }}/metadata_agent.ini"
     mode: "0660"
-  register: neutron_metadata_agent_ini
-  when:
-    - neutron_metadata_agent.enabled | bool
-    - neutron_metadata_agent.host_in_groups | bool
+  when: service | service_enabled_and_mapped_to_host
+
+- name: Copying over neutron_ovn_metadata_agent.ini
+  become: true
+  vars:
+    service_name: "neutron-ovn-metadata-agent"
+    service: "{{ neutron_services[service_name] }}"
+  merge_configs:
+    sources:
+      - "{{ role_path }}/templates/neutron_ovn_metadata_agent.ini.j2"
+      - "{{ node_custom_config }}/neutron/neutron_ovn_metadata_agent.ini"
+    dest: "{{ node_config_directory }}/{{ service_name }}/neutron_ovn_metadata_agent.ini"
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
+
+- name: Copying over neutron_ovn_vpn_agent.ini
+  become: true
+  vars:
+    service_name: "neutron-ovn-vpn-agent"
+    service: "{{ neutron_services[service_name] }}"
+  merge_configs:
+    sources:
+      - "{{ role_path }}/templates/neutron_ovn_vpn_agent.ini.j2"
+      - "{{ node_custom_config }}/neutron/neutron_ovn_vpn_agent.ini"
+    dest: "{{ node_config_directory }}/{{ service_name }}/neutron_ovn_vpn_agent.ini"
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
   notify:
     - "Restart {{ service_name }} container"
 
-- name: Copying over lbaas_agent.ini
+- name: Copying over metering_agent.ini
   become: true
   vars:
-    service_name: "neutron-lbaas-agent"
-    neutron_lbaas_agent: "{{ neutron_services[service_name] }}"
+    service_name: "neutron-metering-agent"
+    service: "{{ neutron_services[service_name] }}"
   merge_configs:
     sources:
-      - "{{ role_path }}/templates/lbaas_agent.ini.j2"
-      - "{{ node_custom_config }}/neutron/lbaas_agent.ini"
-    dest: "{{ node_config_directory }}/{{ service_name }}/lbaas_agent.ini"
+      - "{{ role_path }}/templates/metering_agent.ini.j2"
+      - "{{ node_custom_config }}/neutron/metering_agent.ini"
+    dest: "{{ node_config_directory }}/{{ service_name }}/metering_agent.ini"
     mode: "0660"
-  register: neutron_lbaas_agent_ini
-  when:
-    - neutron_lbaas_agent.enabled | bool
-    - neutron_lbaas_agent.host_in_groups | bool
-  notify:
-    - "Restart {{ service_name }} container"
+  when: service | service_enabled_and_mapped_to_host
 
 - name: Copying over ironic_neutron_agent.ini
   become: true
   vars:
     service_name: "ironic-neutron-agent"
-    ironic_neutron_agent: "{{ neutron_services[service_name] }}"
+    service: "{{ neutron_services[service_name] }}"
   merge_configs:
     sources:
       - "{{ role_path }}/templates/ironic_neutron_agent.ini.j2"
       - "{{ node_custom_config }}/neutron/ironic_neutron_agent.ini"
     dest: "{{ node_config_directory }}/{{ service_name }}/ironic_neutron_agent.ini"
     mode: "0660"
-  register: ironic_neutron_agent_ini
-  when:
-    - ironic_neutron_agent.enabled | bool
-    - ironic_neutron_agent.host_in_groups | bool
-  notify:
-    - "Restart {{ service_name }} container"
+  when: service | service_enabled_and_mapped_to_host
 
 - name: Copying over bgp_dragent.ini
   become: true
   vars:
     service_name: "neutron-bgp-dragent"
-    neutron_bgp_dragent: "{{ neutron_services[service_name] }}"
+    service: "{{ neutron_services[service_name] }}"
   merge_configs:
     sources:
       - "{{ role_path }}/templates/bgp_dragent.ini.j2"
       - "{{ node_custom_config }}/neutron/bgp_dragent.ini"
     dest: "{{ node_config_directory }}/{{ service_name }}/bgp_dragent.ini"
-  register: neutron_bgp_dragent_ini
-  when:
-    - neutron_bgp_dragent.enabled | bool
-    - neutron_bgp_dragent.host_in_groups | bool
-  notify:
-    - "Restart {{ service_name }} container"
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
 
-- name: Check if policies shall be overwritten
-  local_action: stat path="{{ node_custom_config }}/neutron/policy.json"
-  run_once: True
-  register: neutron_policy
-
-- name: Copying over nsx.ini
-  vars:
-    service_name: "neutron-server"
-    neutron_server: "{{ neutron_services[service_name] }}"
-  merge_configs:
-    sources:
-      - "{{ role_path }}/templates/nsx.ini.j2"
-      - "{{ node_custom_config }}/neutron/nsx.ini"
-      - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/nsx.ini"
-    dest: "{{ node_config_directory }}/{{ service_name }}/nsx.ini"
-  register: nsx_ini
-  when:
-    - neutron_server.enabled | bool
-    - neutron_server.host_in_groups | bool
-    - neutron_plugin_agent in ['vmware_nsxv', 'vmware_nsxv3', 'vmware_dvs']
-  notify:
-    - "Restart {{ service_name }} container"
-
-- name: Copying over existing policy.json
+- name: Copying over ovn_agent.ini
   become: true
   vars:
-    service_name: "{{ item.key }}"
-    services_need_policy_json:
-      - "neutron-dhcp-agent"
-      - "neutron-l3-agent"
-      - "neutron-linuxbridge-agent"
-      - "neutron-metadata-agent"
-      - "neutron-openvswitch-agent"
-      - "neutron-openvswitch-agent-xenapi"
-      - "neutron-server"
-      - "neutron-lbaas-agent"
-      - "neutron-bgp-dragent"
-      - "neutron-sriov-agent"
-  template:
-    src: "{{ node_custom_config }}/neutron/policy.json"
-    dest: "{{ node_config_directory }}/{{ service_name }}/policy.json"
+    service_name: "neutron-ovn-agent"
+    service: "{{ neutron_services[service_name] }}"
+  merge_configs:
+    sources:
+      - "{{ role_path }}/templates/ovn_agent.ini.j2"
+      - "{{ node_custom_config }}/neutron/ovn_agent.ini"
+    dest: "{{ node_config_directory }}/{{ service_name }}/ovn_agent.ini"
     mode: "0660"
-  register: policy_jsons
-  when:
-    - neutron_policy.stat.exists
-    - item.value.enabled | bool
-    - item.value.host_in_groups | bool
-  with_dict: "{{ neutron_services }}"
-  notify:
-    - "Restart {{ item.key }} container"
+  when: service | service_enabled_and_mapped_to_host
 
 - name: Copy neutron-l3-agent-wrapper script
   become: true
   vars:
     service_name: "neutron-l3-agent"
     service: "{{ neutron_services[service_name] }}"
-  template:
+  ansible.builtin.template:
     src: neutron-l3-agent-wrapper.sh.j2
     dest: "{{ node_config_directory }}/{{ service_name }}/neutron-l3-agent-wrapper.sh"
-  register: neutron_l3_agent_wrapper
-  when:
-    - service.enabled | bool
-    - service.host_in_groups | bool
-  notify:
-    - "Restart {{ service_name }} container"
+    mode: "0770"
+  when: service | service_enabled_and_mapped_to_host
 
 - name: Copying over extra ml2 plugins
   become: true
   vars:
     service_name: "{{ item.0 }}"
     services_need_ml2_conf_ini:
-      - "neutron-linuxbridge-agent"
       - "neutron-openvswitch-agent"
       - "neutron-server"
-  template:
+  ansible.builtin.template:
     src: "{{ item.2.path }}"
     dest: "{{ node_config_directory }}/{{ service_name }}/{{ item.2.path | basename }}"
     mode: "0660"
-  register: extra_ml2_plugins
   when:
     - item.2 is defined
     - item.1.enabled | bool
@@ -428,25 +392,48 @@
   with_nested:
     - "{{ neutron_services | dictsort }}"
     - "{{ check_extra_ml2_plugins.files }}"
-  notify:
-    - "Restart {{ item.0 }} container"
 
-# TODO check the environment change
-- name: Check neutron containers
+- name: Copying over neutron_taas.conf
   become: true
-  kolla_docker:
-    action: "compare_container"
-    common_options: "{{ docker_common_options }}"
-    name: "{{ item.value.container_name }}"
-    image: "{{ item.value.image }}"
-    privileged: "{{ item.value.privileged | default(False) }}"
-    volumes: "{{ item.value.volumes }}"
-    dimensions: "{{ item.value.dimensions }}"
-  register: check_neutron_containers
+  vars:
+    service_name: "{{ item.key }}"
+    services_need_neutron_taas_conf:
+      - "neutron-server"
+      - "neutron-openvswitch-agent"
+  merge_configs:
+    sources:
+      - "{{ role_path }}/templates/neutron_taas.conf.j2"
+      - "{{ node_custom_config }}/neutron/neutron_taas.conf"
+      - "{{ node_custom_config }}/neutron/{{ inventory_hostname }}/neutron_taas.conf"
+    dest: "{{ node_config_directory }}/{{ item.key }}/neutron_taas.conf"
+    mode: "0660"
   when:
-    - kolla_action != "config"
-    - item.value.enabled | bool
-    - item.value.host_in_groups | bool
-  with_dict: "{{ neutron_services }}"
-  notify:
-    - "Restart {{ item.key }} container"
+    - enable_neutron_taas | bool
+    - item.key in services_need_neutron_taas_conf
+  with_dict: "{{ neutron_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: "Configure uWSGI for Neutron"
+  ansible.builtin.include_role:
+    name: service-uwsgi-config
+  vars:
+    project_services: "{{ neutron_services }}"
+    service: "{{ neutron_services['neutron-server'] }}"
+    service_name: "neutron-server"
+    service_uwsgi_config_http_port: "{{ neutron_server_listen_port }}"
+    service_uwsgi_config_log_file_chmod: "644"
+    service_uwsgi_config_module: "{{ service.wsgi }}"
+    service_uwsgi_config_tls_backend: "{{ neutron_enable_tls_backend | bool }}"
+    service_uwsgi_config_tls_cert: "/etc/neutron/certs/neutron-cert.pem"
+    service_uwsgi_config_tls_key: "/etc/neutron/certs/neutron-key.pem"
+    service_uwsgi_config_uid: "neutron"
+    service_uwsgi_config_workers: "{{ neutron_api_workers }}"
+    service_uwsgi_config_env:
+      OS_NEUTRON_CONFIG_FILES: >-
+        {{
+          neutron_config_files
+          | selectattr('enabled', 'equalto', true)
+          | map(attribute='name')
+          | join(';')
+        }}
+  when:
+    - service | service_enabled_and_mapped_to_host

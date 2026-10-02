@@ -1,1 +1,7 @@
 ---
+- name: Precheck multipathd configuration
+  ansible.builtin.import_role:
+    name: service-precheck
+  vars:
+    service_precheck_services: "{{ multipathd_services }}"
+    service_name: "{{ project_name }}"

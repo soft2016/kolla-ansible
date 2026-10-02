@@ -1,0 +1,61 @@
+---
+- job:
+    name: kolla-ansible-ovn-base
+    parent: kolla-ansible-base
+    files: !inherit
+      - ^ansible/group_vars/all/(neutron|octavia|openvswitch|ovn).yml
+      - ^ansible/roles/(neutron|octavia|openvswitch|ovn-controller|ovn-db|service-check-containers)/
+      - ^tests/test-ovn.sh
+    voting: false
+    vars:
+      scenario: ovn
+      scenario_images_extra:
+        - ^octavia
+        - ^ovn
+        - ^prometheus
+
+- job:
+    name: kolla-ansible-debian-trixie-ovn
+    parent: kolla-ansible-ovn-base
+    nodeset: kolla-ansible-debian-trixie-multi-16GB
+
+- job:
+    name: kolla-ansible-debian-trixie-ovn-upgrade
+    parent: kolla-ansible-debian-trixie-ovn
+    nodeset: kolla-ansible-debian-trixie-multi-16GB
+    timeout: 10800
+
+- job:
+    name: kolla-ansible-rocky-10-ovn
+    parent: kolla-ansible-ovn-base
+    nodeset: kolla-ansible-rocky-10-multi-16GB
+
+- job:
+    name: kolla-ansible-rocky-10-ovn-upgrade
+    parent: kolla-ansible-rocky-10-ovn
+    nodeset: kolla-ansible-rocky-10-multi-16GB
+    timeout: 10800
+
+- job:
+    name: kolla-ansible-ubuntu-noble-ovn
+    parent: kolla-ansible-ovn-base
+    nodeset: kolla-ansible-ubuntu-noble-multi-16GB
+
+- job:
+    name: kolla-ansible-ubuntu-noble-ovn-upgrade
+    parent: kolla-ansible-ubuntu-noble-ovn
+    nodeset: kolla-ansible-ubuntu-noble-multi-16GB
+    timeout: 10800
+
+- project-template:
+    name: kolla-ansible-scenario-ovn
+    description: |
+      Runs Kolla-Ansible OVN scenario jobs.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie-ovn
+        - kolla-ansible-debian-trixie-ovn-upgrade
+        - kolla-ansible-rocky-10-ovn
+        - kolla-ansible-rocky-10-ovn-upgrade
+        - kolla-ansible-ubuntu-noble-ovn
+        - kolla-ansible-ubuntu-noble-ovn-upgrade

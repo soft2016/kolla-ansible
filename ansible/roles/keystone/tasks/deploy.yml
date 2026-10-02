@@ -1,19 +1,28 @@
 ---
-- include_tasks: config.yml
+- name: Configure keystone
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: clone.yml
+- name: Check keystone containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone keystone repository
+  ansible.builtin.include_tasks: clone.yml
   when:
     - keystone_dev_mode | bool
 
-- include_tasks: bootstrap.yml
+- name: Bootstrap keystone service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers
 
-- include_tasks: init_fernet.yml
+- name: Include tasks from distribute_fernet.yml
+  ansible.builtin.include_tasks: distribute_fernet.yml
+
+- name: Register keystone in Keystone
+  ansible.builtin.import_tasks: register.yml
+
+- name: Include tasks from register_identity_providers.yml
+  ansible.builtin.include_tasks: register_identity_providers.yml
   when:
-    - keystone_token_provider == 'fernet'
-
-- include_tasks: register.yml
-
-- include_tasks: check.yml
+    - enable_keystone_federation | bool

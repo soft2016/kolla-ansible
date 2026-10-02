@@ -1,20 +1,19 @@
 ---
 - name: Ensuring config directories exist
-  file:
+  ansible.builtin.file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
     owner: "{{ config_owner_user }}"
     group: "{{ config_owner_group }}"
     mode: "0770"
   become: true
-  when:
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ magnum_services }}"
+  with_dict: "{{ magnum_services | select_services_enabled_and_mapped_to_host }}"
 
 - name: Check if policies shall be overwritten
-  local_action: stat path="{{ item }}"
-  run_once: True
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  delegate_to: localhost
+  run_once: true
   register: magnum_policy
   with_first_found:
     - files: "{{ supported_policy_format_list }}"
@@ -23,26 +22,65 @@
       skip: true
 
 - name: Set magnum policy file
-  set_fact:
+  ansible.builtin.set_fact:
     magnum_policy_file: "{{ magnum_policy.results.0.stat.path | basename }}"
     magnum_policy_file_path: "{{ magnum_policy.results.0.stat.path }}"
   when:
-    - magnum_policy.results
+    - magnum_policy.results | length > 0
+
+- name: Check if kubeconfig file is supplied
+  ansible.builtin.stat:
+    path: "{{ node_custom_config }}/magnum/kubeconfig"
+  delegate_to: localhost
+  run_once: true
+  register: magnum_kubeconfig_file
+
+- name: Copying over kubeconfig file
+  ansible.builtin.template:
+    src: "{{ node_custom_config }}/magnum/kubeconfig"
+    dest: "{{ node_config_directory }}/{{ item.key }}/kubeconfig"
+    mode: "0660"
+  become: true
+  when:
+    - magnum_kubeconfig_file.stat.exists
+  with_dict: "{{ magnum_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: Set magnum kubeconfig file's path
+  ansible.builtin.set_fact:
+    magnum_kubeconfig_file_path: "{{ magnum_kubeconfig_file.stat.path }}"
+  when:
+    - magnum_kubeconfig_file.stat.exists
+
+- name: Copying over TLS certificates
+  ansible.builtin.include_tasks: copy-certs.yml
+  when:
+    - magnum_copy_certs | bool
 
 - name: Copying over config.json files for services
-  template:
+  ansible.builtin.template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
     mode: "0660"
   become: true
-  register: magnum_config_jsons
+  with_dict: "{{ magnum_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: Configure uWSGI for Magnum
+  ansible.builtin.include_role:
+    name: service-uwsgi-config
+  vars:
+    project_services: "{{ magnum_services }}"
+    service: "{{ magnum_services['magnum-api'] }}"
+    service_name: "magnum-api"
+    service_uwsgi_config_http_port: "{{ magnum_api_listen_port }}"
+    service_uwsgi_config_log_file_chmod: "644"
+    service_uwsgi_config_module: "{{ service.wsgi }}"
+    service_uwsgi_config_tls_backend: "{{ magnum_enable_tls_backend | bool }}"
+    service_uwsgi_config_tls_cert: "/etc/magnum/certs/magnum-cert.pem"
+    service_uwsgi_config_tls_key: "/etc/magnum/certs/magnum-key.pem"
+    service_uwsgi_config_workers: "{{ magnum_api_workers }}"
+    service_uwsgi_config_uid: "magnum"
   when:
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ magnum_services }}"
-  notify:
-    - Restart magnum-api container
-    - Restart magnum-conductor container
+    - service | service_enabled_and_mapped_to_host
 
 - name: Copying over magnum.conf
   vars:
@@ -57,47 +95,14 @@
     dest: "{{ node_config_directory }}/{{ item.key }}/magnum.conf"
     mode: "0660"
   become: true
-  register: magnum_confs
-  when:
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ magnum_services }}"
-  notify:
-    - Restart magnum-api container
-    - Restart magnum-conductor container
+  with_dict: "{{ magnum_services | select_services_enabled_and_mapped_to_host }}"
 
 - name: Copying over existing policy file
-  template:
+  ansible.builtin.template:
     src: "{{ magnum_policy_file_path }}"
     dest: "{{ node_config_directory }}/{{ item.key }}/{{ magnum_policy_file }}"
     mode: "0660"
   become: true
-  register: magnum_policy_overwriting
   when:
     - magnum_policy_file is defined
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ magnum_services }}"
-  notify:
-    - Restart magnum-api container
-    - Restart magnum-conductor container
-
-- name: Check magnum containers
-  become: true
-  kolla_docker:
-    action: "compare_container"
-    common_options: "{{ docker_common_options }}"
-    name: "{{ item.value.container_name }}"
-    image: "{{ item.value.image }}"
-    volumes: "{{ item.value.volumes|reject('equalto', '')|list }}"
-    dimensions: "{{ item.value.dimensions }}"
-    environment: "{{ item.value.environment }}"
-  register: check_magnum_containers
-  when:
-    - kolla_action != "config"
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ magnum_services }}"
-  notify:
-    - Restart magnum-api container
-    - Restart magnum-conductor container
+  with_dict: "{{ magnum_services | select_services_enabled_and_mapped_to_host }}"

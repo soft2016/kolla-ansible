@@ -1,0 +1,20 @@
+---
+- name: Gather facts
+  import_playbook: gather-facts.yml
+
+- name: Remove nova_libvirt container
+  gather_facts: false
+  hosts:
+    - compute
+  serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ nova_libvirt_cleanup_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  tags:
+    - nova-libvirt-cleanup
+  tasks:
+    - name: Clean up nova libvirt container and configuration
+      ansible.builtin.import_role:
+        name: nova-cell
+        tasks_from: libvirt-cleanup.yml

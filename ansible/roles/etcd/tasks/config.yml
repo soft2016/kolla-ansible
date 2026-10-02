@@ -1,46 +1,23 @@
 ---
 - name: Ensuring config directories exist
-  file:
+  ansible.builtin.file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
     owner: "{{ config_owner_user }}"
     group: "{{ config_owner_group }}"
     mode: "0770"
   become: true
-  when:
-    - item.value.enabled | bool
-    - inventory_hostname in groups[item.value.group]
-  with_dict: "{{ etcd_services }}"
+  with_dict: "{{ etcd_services | select_services_enabled_and_mapped_to_host }}"
 
 - name: Copying over config.json files for services
-  template:
+  ansible.builtin.template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
     mode: "0660"
   become: true
-  register: etcd_config_jsons
-  when:
-    - item.value.enabled | bool
-    - inventory_hostname in groups[item.value.group]
-  with_dict: "{{ etcd_services }}"
-  notify:
-    - Restart etcd container
+  with_dict: "{{ etcd_services | select_services_enabled_and_mapped_to_host }}"
 
-- name: Check etcd containers
-  become: true
-  kolla_docker:
-    action: "compare_container"
-    common_options: "{{ docker_common_options }}"
-    name: "{{ item.value.container_name }}"
-    image: "{{ item.value.image }}"
-    volumes: "{{ item.value.volumes }}"
-    dimensions: "{{ item.value.dimensions }}"
-    environment: "{{ item.value.environment }}"
-  register: check_etcd_containers
+- name: Copying over TLS certificates
+  ansible.builtin.include_tasks: copy-certs.yml
   when:
-    - kolla_action != "config"
-    - item.value.enabled | bool
-    - inventory_hostname in groups[item.value.group]
-  with_dict: "{{ etcd_services }}"
-  notify:
-    - Restart etcd container
+    - etcd_copy_certs | bool

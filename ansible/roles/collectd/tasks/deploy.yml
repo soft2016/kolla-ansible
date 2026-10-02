@@ -1,5 +1,9 @@
 ---
-- include_tasks: config.yml
+- name: Configure collectd
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check collectd containers
+  ansible.builtin.import_tasks: check-containers.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

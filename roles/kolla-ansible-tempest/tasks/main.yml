@@ -1,0 +1,73 @@
+---
+- name: Install required packages
+  ansible.builtin.pip:
+    name: "{{ kolla_ansible_tempest_packages + kolla_ansible_tempest_packages_extra }}"
+    extra_args: "{{ ('-c' + kolla_ansible_tempest_upper_constraints) if kolla_ansible_tempest_upper_constraints | length > 0 }}"
+    virtualenv: "{{ kolla_ansible_tempest_venv_path }}"
+    virtualenv_command: "python3 -m venv"
+
+- name: Init tempest workspace
+  ansible.builtin.shell:
+    cmd: >
+      {{ kolla_ansible_tempest_venv_path }}/bin/tempest init tempest
+      >/tmp/logs/ansible/test-init-tempest 2>&1
+    creates: "/home/zuul/tempest"
+
+- name: Discover tempest config
+  environment:
+    OS_CLIENT_CONFIG_FILE: "/etc/kolla/clouds.yaml"
+  vars:
+    ver: "{{ kolla_ansible_tempest_cirros_ver }}"
+    arch: "{{ 'aarch64' if ansible_architecture == 'aarch64' else 'x86_64' }}"
+    image: "https://download.cirros-cloud.net/{{ ver }}/cirros-{{ ver }}-{{ arch }}-disk.img"
+  ansible.builtin.shell:
+    chdir: "/home/zuul/tempest"
+    cmd: >
+      {{ kolla_ansible_tempest_venv_path }}/bin/discover-tempest-config
+      --debug
+      --image {{ image }}
+      --os-cloud kolla-admin
+      compute.build_timeout {{ kolla_ansible_tempest_build_timeout }}
+      >/tmp/logs/ansible/test-init-tempest-discover 2>&1
+  changed_when: false
+
+# NOTE(bbezak): aarch64 Tempest guests may miss config-drive with the
+# default SCSI model, so force virtio-scsi for CirrOS.
+- name: Set Tempest image properties on aarch64
+  vars:
+    ansible_python_interpreter: "{{ kolla_ansible_venv_path }}/bin/python"
+    image_name: "cirros-{{ kolla_ansible_tempest_cirros_ver }}-aarch64-disk.img"
+  openstack.cloud.image:
+    cloud: "kolla-admin"
+    name: "{{ item }}"
+    visibility: public
+    properties:
+      hw_scsi_model: virtio-scsi
+  environment:
+    OS_CLIENT_CONFIG_FILE: "/etc/kolla/clouds.yaml"
+  loop:
+    - "{{ image_name }}"
+    - "{{ image_name }}_alt"
+  when: ansible_architecture == 'aarch64'
+
+- name: Run tempest tests
+  environment:
+    OS_LOG_CAPTURE: "1"
+    OS_STDOUT_CAPTURE: "1"
+    OS_STDERR_CAPTURE: "1"
+    OS_TEST_TIMEOUT: "3600"
+  vars:
+    tempest_log_file: "test-tempest-run{{ '-post-upgrade' if post_upgrade | bool else '' }}"
+  ansible.builtin.shell:
+    chdir: "/home/zuul/tempest"
+    cmd: >
+      {{ kolla_ansible_tempest_venv_path }}/bin/tempest run
+      --config-file etc/tempest.conf
+      {% if kolla_ansible_tempest_regex | length > 0 %}
+      --regex '{{ kolla_ansible_tempest_regex | join("|") }}'
+      {% endif %}
+      {% if kolla_ansible_tempest_exclude_regex | length > 0 %}
+      --exclude-regex '{{ kolla_ansible_tempest_exclude_regex | join("|") }}'
+      {% endif %}
+      >/tmp/logs/ansible/{{ tempest_log_file }} 2>&1
+  changed_when: true

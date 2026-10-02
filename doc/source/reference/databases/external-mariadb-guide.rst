@@ -31,7 +31,7 @@ by ensuring the following line exists within ``/etc/kolla/globals.yml`` :
 
 .. code-block:: yaml
 
-   enable_mariadb: "no"
+   enable_mariadb: false
 
 There are two ways in which you can use external MariaDB:
 * Using an already load-balanced MariaDB address
@@ -48,7 +48,7 @@ need to do the following:
 
    .. code-block:: ini
 
-      [mariadb:children]
+      [mariadb]
       myexternalmariadbloadbalancer.com
 
 
@@ -56,11 +56,11 @@ need to do the following:
 
    .. code-block:: yaml
 
-      database_address: myexternalloadbalancer.com
+      database_address: myexternalmariadbloadbalancer.com
 
 .. note::
 
-   If ``enable_external_mariadb_load_balancer`` is set to ``no``
+   If ``enable_external_mariadb_load_balancer`` is set to ``false``
    (default), the external DB load balancer should be accessible
    from all nodes during your deployment.
 
@@ -79,7 +79,7 @@ Using this way, you need to adjust the inventory file:
 If you choose to use haproxy for load balancing between the
 members of the cluster, every node within this group
 needs to be resolvable and reachable from all
-the hosts within the ``[haproxy:children]``  group
+the hosts within the ``[loadbalancer:children]``  group
 of your inventory (defaults to ``[network]``).
 
 In addition, configure the ``/etc/kolla/globals.yml`` file
@@ -87,7 +87,7 @@ according to the following configuration:
 
 .. code-block:: yaml
 
-   enable_external_mariadb_load_balancer: yes
+   enable_external_mariadb_load_balancer: true
 
 Using External MariaDB with a privileged user
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -101,12 +101,12 @@ and set the ``database_password`` in ``/etc/kolla/passwords.yml`` file:
 
    database_password: mySuperSecurePassword
 
-If the MariaDB ``username`` is not ``root``, set ``database_username`` in
+If the MariaDB ``username`` is not ``root``, set ``database_user`` in
 ``/etc/kolla/globals.yml`` file:
 
 .. code-block:: yaml
 
-   database_username: "privillegeduser"
+   database_user: "privillegeduser"
 
 Using preconfigured databases / users:
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

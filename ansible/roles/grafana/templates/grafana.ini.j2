@@ -4,9 +4,12 @@ logs = /var/log/kolla/grafana
 plugins = /var/lib/grafana/plugins
 provisioning = /etc/grafana/provisioning
 
+[log]
+mode = file
+
 [server]
 protocol = http
-http_addr = {{ api_interface_address }}
+http_addr = {{ api_interface_address | put_address_in_context('url') }}
 http_port = {{ grafana_server_port }}
 
 router_logging = true
@@ -23,14 +26,6 @@ user = {{ grafana_database_user }}
 password = {{ grafana_database_password }}
 ssl_mode = disable
 
-[session]
-provider = mysql
-provider_config = {{ grafana_database_user }}:{{ grafana_database_password }}@tcp({{ grafana_database_address }})/{{ grafana_database_name }}
-
-cookie_name = grafana_sess
-cookie_secure = false
-session_life_time = 86400
-
 [analytics]
 reporting_enabled = false
 check_for_updates = false
@@ -38,3 +33,19 @@ check_for_updates = false
 [security]
 admin_user = {{ grafana_admin_username }}
 admin_password = {{ grafana_admin_password }}
+
+[plugins]
+plugin_admin_enabled = false
+public_key_retrieval_disabled = true
+
+{% if grafana_ldap_enabled | bool %}
+[auth.ldap]
+enabled = true
+config_file = /etc/grafana/ldap.toml
+allow_sign_up = true
+{% endif %}
+
+{% if grafana_custom_home_dashboard | bool %}
+[dashboards]
+default_home_dashboard_path = /usr/share/grafana/public/dashboards/home.json
+{% endif %}

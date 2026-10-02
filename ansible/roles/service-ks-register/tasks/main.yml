@@ -1,0 +1,139 @@
+---
+- name: "Create/delete services/endpoints/projects/users/roles for {{ project_name }}"
+  become: true
+  run_once: true
+  block:
+    - name: "Creating/deleting services for {{ project_name }}"
+      kolla_toolbox:
+        container_engine: "{{ kolla_container_engine }}"
+        module_name: openstack.cloud.catalog_service
+        module_args:
+          name: "{{ item.name }}"
+          service_type: "{{ item.type | default(omit) }}"
+          description: "{{ item.description | default(omit) }}"
+          region_name: "{{ service_ks_register_region_name }}"
+          auth: "{{ service_ks_register_auth }}"
+          cloud: "{{ openstack_auth_cloud }}"
+          interface: "{{ service_ks_register_interface }}"
+          cacert: "{{ service_ks_cacert }}"
+          state: "{{ item.state | default('present') }}"
+      loop: "{{ service_ks_register_services }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.type }})"
+      register: service_ks_register_result
+      until: service_ks_register_result is success
+      retries: "{{ service_ks_register_retries }}"
+      delay: "{{ service_ks_register_delay }}"
+      when: item.enabled | default(True) | bool
+
+    - name: "Creating/deleting endpoints for {{ project_name }}"
+      kolla_toolbox:
+        container_engine: "{{ kolla_container_engine }}"
+        module_name: openstack.cloud.endpoint
+        module_args:
+          service: "{{ item.0.name }}"
+          url: "{{ item.1.url }}"
+          endpoint_interface: "{{ item.1.interface }}"
+          region: "{{ service_ks_register_endpoint_region }}"
+          region_name: "{{ service_ks_register_region_name }}"
+          auth: "{{ service_ks_register_auth }}"
+          cloud: "{{ openstack_auth_cloud }}"
+          interface: "{{ service_ks_register_interface }}"
+          cacert: "{{ service_ks_cacert }}"
+          state: "{{ item.state | default('present') }}"
+      with_subelements:
+        - "{{ service_ks_register_services }}"
+        - endpoints
+      loop_control:
+        label: "{{ item.0.name }} -> {{ item.1.url }} -> {{ item.1.interface }}"
+      register: service_ks_register_result
+      until: service_ks_register_result is success
+      retries: "{{ service_ks_register_retries }}"
+      delay: "{{ service_ks_register_delay }}"
+      when: item.0.enabled | default(True) | bool
+
+    - name: "Creating projects for {{ project_name }}"
+      kolla_toolbox:
+        container_engine: "{{ kolla_container_engine }}"
+        module_name: openstack.cloud.project
+        module_args:
+          name: "{{ item }}"
+          domain: "{{ service_ks_register_domain }}"
+          region_name: "{{ service_ks_register_region_name }}"
+          auth: "{{ service_ks_register_auth }}"
+          cloud: "{{ openstack_auth_cloud }}"
+          interface: "{{ service_ks_register_interface }}"
+          cacert: "{{ service_ks_cacert }}"
+      with_items: "{{ service_ks_register_users | map(attribute='project') | unique | list }}"
+      register: service_ks_register_result
+      until: service_ks_register_result is success
+      retries: "{{ service_ks_register_retries }}"
+      delay: "{{ service_ks_register_delay }}"
+
+    - name: "Creating/deleting users for {{ project_name }}"
+      kolla_toolbox:
+        container_engine: "{{ kolla_container_engine }}"
+        module_name: openstack.cloud.identity_user
+        module_args:
+          default_project: "{{ item.project }}"
+          name: "{{ item.user }}"
+          password: "{{ item.password | default(omit) }}"
+          update_password: >-
+            {{ 'always' if
+            update_keystone_service_user_passwords | bool and
+            item.password is defined
+            else 'on_create' }}
+          domain: "{{ service_ks_register_domain }}"
+          region_name: "{{ service_ks_register_region_name }}"
+          auth: "{{ service_ks_register_auth }}"
+          cloud: "{{ openstack_auth_cloud }}"
+          interface: "{{ service_ks_register_interface }}"
+          cacert: "{{ service_ks_cacert }}"
+      with_items: "{{ service_ks_register_users }}"
+      loop_control:
+        label: "{{ item.user }} -> {{ item.project }}"
+      register: service_ks_register_result
+      until: service_ks_register_result is success
+      retries: "{{ service_ks_register_retries }}"
+      delay: "{{ service_ks_register_delay }}"
+
+    - name: "Creating roles for {{ project_name }}"
+      kolla_toolbox:
+        container_engine: "{{ kolla_container_engine }}"
+        module_name: openstack.cloud.identity_role
+        module_args:
+          name: "{{ item }}"
+          region_name: "{{ service_ks_register_region_name }}"
+          auth: "{{ service_ks_register_auth }}"
+          cloud: "{{ openstack_auth_cloud }}"
+          interface: "{{ service_ks_register_interface }}"
+          cacert: "{{ service_ks_cacert }}"
+      with_items: "{{ service_ks_register_users | map(attribute='role') | unique | list + service_ks_register_roles }}"
+      register: service_ks_register_result
+      until: service_ks_register_result is success
+      retries: "{{ service_ks_register_retries }}"
+      delay: "{{ service_ks_register_delay }}"
+
+    - name: "Granting/revoking user roles for {{ project_name }}"
+      kolla_toolbox:
+        container_engine: "{{ kolla_container_engine }}"
+        module_name: openstack.cloud.role_assignment
+        module_args:
+          user: "{{ item.user }}"
+          role: "{{ item.role }}"
+          project: "{{ item.project | default(omit) }}"
+          domain: "{{ item.domain | default(omit) }}"
+          system: "{{ item.system | default(omit) }}"
+          region_name: "{{ service_ks_register_region_name }}"
+          auth: "{{ service_ks_register_auth }}"
+          cloud: "{{ openstack_auth_cloud }}"
+          interface: "{{ service_ks_register_interface }}"
+          cacert: "{{ service_ks_cacert }}"
+          state: "{{ item.state | default('present') }}"
+      with_items: "{{ service_ks_register_users + service_ks_register_user_roles }}"
+      loop_control:
+        label: "{{ item.user }} -> {{ item.project | default(item.domain) | default(item.system) }} -> {{ item.role }}"
+      register: service_ks_register_result
+      until: service_ks_register_result is success
+      retries: "{{ service_ks_register_retries }}"
+      delay: "{{ service_ks_register_delay }}"

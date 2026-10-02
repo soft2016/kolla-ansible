@@ -1,9 +1,15 @@
 ---
-- include_tasks: config.yml
+- name: Configure grafana
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: bootstrap.yml
+- name: Check grafana containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Bootstrap grafana service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers
 
-- include_tasks: post_config.yml
+- name: Import tasks from post_config.yml
+  ansible.builtin.import_tasks: post_config.yml

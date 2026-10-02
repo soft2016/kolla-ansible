@@ -35,19 +35,18 @@ services are properly working.
 Preparation and Deployment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Cinder and Ceph are required, enable it in ``/etc/kolla/globals.yml``:
+Cinder is required, enable it in ``/etc/kolla/globals.yml``:
 
 .. code-block:: console
 
-   enable_cinder: "yes"
-   enable_ceph: "yes"
+   enable_cinder: true
 
 Enable Manila and generic back end in ``/etc/kolla/globals.yml``:
 
 .. code-block:: console
 
-   enable_manila: "yes"
-   enable_manila_backend_generic: "yes"
+   enable_manila: true
+   enable_manila_backend_generic: true
 
 By default Manila uses instance flavor id 100 for its file systems. For Manila
 to work, either create a new nova flavor with id 100 (use *nova flavor-create*)
@@ -108,7 +107,7 @@ Create a manila share server image to the Image service:
 
 .. code-block:: console
 
-   # wget https://tarballs.openstack.org/manila-image-elements/images/manila-service-image-master.qcow2
+   # wget https://tarballs.opendev.org/openstack/manila-image-elements/images/manila-service-image-master.qcow2
    # glance image-create --name "manila-service-image" \
      --file manila-service-image-master.qcow2 \
      --disk-format qcow2 --container-format bare \
@@ -324,13 +323,13 @@ Use the manila migration command, as shown in the following example:
      --new_share_type share_type --new_share_network share_network \
      shareID destinationHost
 
-- ``--force-host-copy``: Forces the generic host-based migration mechanism and
+* ``--force-host-copy``: Forces the generic host-based migration mechanism and
   bypasses any driver optimizations.
-- ``destinationHost``: Is in this format ``host#pool`` which includes
+* ``destinationHost``: Is in this format ``host#pool`` which includes
   destination host and pool.
-- ``--writable`` and ``--preserve-metadata``: Are only for driver assisted.
-- ``--new_share_network``: Only if driver supports shared network.
-- ``--new_share_type``: Choose share type compatible with destinationHost.
+* ``--writable`` and ``--preserve-metadata``: Are only for driver assisted.
+* ``--new_share_network``: Only if driver supports shared network.
+* ``--new_share_type``: Choose share type compatible with destinationHost.
 
 Checking share migration progress
 ---------------------------------
@@ -361,5 +360,67 @@ Use the :command:`manila migration-complete shareID` command to complete share
 migration process.
 
 For more information about how to manage shares, see the
-`Manage shares
-<https://docs.openstack.org/manila/latest/user/create-and-manage-shares.html>`__.
+:manila-doc:`Manage shares <user/create-and-manage-shares.html>`.
+
+GlusterFS
+~~~~~~~~~
+
+We have support for enabling Manila to provide users access to volumes from an
+external GlusterFS. For more details on the GlusterfsShareDriver, please
+see:
+https://docs.openstack.org/manila/latest/admin/glusterfs_driver.html
+
+Kolla-ansible supports using the GlusterFS shares with NFS. To enable this
+backend, add the following to ``/etc/kolla/globals.yml``:
+
+.. code-block:: console
+
+    enable_manila_backend_glusterfs_nfs: "yes"
+
+Layouts
+-------
+
+A layout is a strategy of allocating storage from GlusterFS backends for
+shares. Currently there are two layouts implemented:
+
+volume mapped layout
+--------------------
+
+You will also need to add the following configuration options to ensure the
+driver can connect to GlusterFS and exposes the correct subset of existing
+volumes in the system by adding the following in ``/etc/kolla/globals.yml``:
+
+.. code-block:: console
+
+    manila_glusterfs_servers:
+      - glusterfs1.example.com
+      - glusterfs2.example.com
+    manila_glusterfs_ssh_user: "root"
+    manila_glusterfs_ssh_password: "<glusterfs ssh password>"
+    manila_glusterfs_volume_pattern: "manila-share-volume-\\d+$"
+
+The ``manila_glusterfs_ssh_password`` and ``manila_glusterfs_ssh_user``
+configuration options are only required when the GlusterFS server runs
+remotely rather than on the system running the Manila share service.
+
+directory mapped layout
+-----------------------
+
+You will also need to add the following configuration options to ensure the
+driver can connect to GlusterFS and exposes the correct subset of existing
+volumes in the system by adding the following in ``/etc/kolla/globals.yml``:
+
+.. code-block:: console
+
+    manila_glusterfs_share_layout: "layout_directory.GlusterfsDirectoryMappedLayout"
+    manila_glusterfs_target: "root@10.0.0.1:/volume"
+    manila_glusterfs_ssh_password: "<glusterfs ssh password>"
+    manila_glusterfs_mount_point_base: "$state_path/mnt"
+
+* ``manila_glusterfs_target``: If it’s of the format
+  <username>@<glustervolserver>:/<glustervolid>, then we ssh to
+  <username>@<glustervolserver> to execute gluster (<username> is supposed to
+  have administrative privileges on <glustervolserver>).
+* ``manila_glusterfs_ssh_password``: configuration options are only required
+  when the GlusterFS server runs remotely rather than on the system running
+  the Manila share service.

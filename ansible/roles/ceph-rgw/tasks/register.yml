@@ -1,0 +1,10 @@
+---
+- name: Register ceph-rgw service, endpoints, and users in Keystone
+  ansible.builtin.import_role:
+    name: service-ks-register
+  vars:
+    service_ks_register_auth: "{{ openstack_ceph_rgw_auth }}"
+    service_ks_register_services: "{{ ceph_rgw_ks_services }}"
+    service_ks_register_users: "{{ ceph_rgw_ks_users }}"
+    service_ks_register_roles: "{{ ceph_rgw_ks_roles }}"
+  when: enable_ceph_rgw_keystone | bool

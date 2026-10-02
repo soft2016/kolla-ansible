@@ -1,0 +1,12 @@
+---
+- name: Import tasks from check-migration.yml
+  ansible.builtin.import_tasks: check-migration.yml
+
+- name: Import tasks from install-target-engine.yml
+  ansible.builtin.import_tasks: install-target-engine.yml
+
+- name: Import tasks from migrate-volumes.yml
+  ansible.builtin.import_tasks: migrate-volumes.yml
+
+- name: Import tasks from uninstall-current-engine.yml
+  ansible.builtin.import_tasks: uninstall-current-engine.yml

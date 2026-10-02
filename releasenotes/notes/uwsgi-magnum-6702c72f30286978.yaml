@@ -1,0 +1,4 @@
+---
+upgrade:
+  - |
+    ``magnum-api`` is now running under uWSGI and supports backend TLS.

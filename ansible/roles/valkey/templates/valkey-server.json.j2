@@ -1,0 +1,30 @@
+{
+    "command": "valkey-server {{ valkey_conf_path }}",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/valkey.conf",
+            "dest": "{{ valkey_conf_path }}",
+            "owner": "valkey",
+            "perm": "0600"
+        }
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/valkey",
+            "owner": "valkey:kolla",
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/valkey/*.log",
+            "owner": "valkey:kolla",
+            "perm": "0664"
+        }
+    ]
+}

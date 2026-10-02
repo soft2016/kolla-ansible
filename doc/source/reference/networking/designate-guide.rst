@@ -9,12 +9,12 @@ Overview
 
 Designate provides DNSaaS services for OpenStack:
 
--  REST API for domain/record management
--  Multi-tenant
--  Integrated with Keystone for authentication
--  Framework in place to integrate with Nova and Neutron
+*  REST API for domain/record management
+*  Multi-tenant
+*  Integrated with Keystone for authentication
+*  Framework in place to integrate with Nova and Neutron
    notifications (for auto-generated records)
--  Support for PowerDNS and Bind9 out of the box
+*  Support for Bind9 and Infoblox out of the box
 
 Configuration on Kolla deployment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -23,23 +23,92 @@ Enable Designate service in ``/etc/kolla/globals.yml``
 
 .. code-block:: yaml
 
-   enable_designate: "yes"
+   enable_designate: true
+   neutron_dns_domain: "example.org."
+
+.. important::
+   The ``neutron_dns_domain`` value has to be different to ``openstacklocal``
+   (its default value) and has to end with a period ``.``.
+
+.. important::
+   ``DNS Integration`` is enabled by default and can be disabled by
+   adding ``neutron_dns_integration: no`` to ``/etc/kolla/globals.yml``
+   and reconfiguring with ``--tags`` neutron.
 
 Configure Designate options in ``/etc/kolla/globals.yml``
 
 .. important::
 
    Designate MDNS node requires the ``dns_interface`` to be reachable from
-   public network.
+   management network.
 
 .. code-block:: yaml
 
    dns_interface: "eth1"
+   designate_ns_record:
+     - "ns1.sample.openstack.org"
+
+.. important::
+
+   If multiple nodes are assigned to be Designate workers, then you must
+   enable a supported coordination backend, currently only ``valkey``
+   is supported. The backend choice can be overridden via the
+   ``designate_coordination_backend`` variable. It defaults to ``valkey``
+   when ``valkey`` is enabled (``enable_valkey`` is set to ``true``).
+
+The following additional variables are required depending on which backend you
+intend to use:
+
+Bind9 Backend
+-------------
+
+Configure Designate options in ``/etc/kolla/globals.yml``
+
+.. code-block:: yaml
+
    designate_backend: "bind9"
-   designate_ns_record: "sample.openstack.org"
+
+Infoblox Backend
+----------------
+
+.. important::
+
+   When using Infoblox as the Designate backend the MDNS node
+   requires the container to listen on port 53. As this is a privileged
+   port you will need to build your designate-mdns container to run
+   as the user root rather than designate.
+
+Configure Designate options in ``/etc/kolla/globals.yml``
+
+.. code-block:: yaml
+
+   designate_backend: "infoblox"
+   designate_backend_infoblox_nameservers: "192.168.1.1,192.168.1.2"
+   designate_infoblox_host: "192.168.1.1"
+   designate_infoblox_wapi_url: "https://infoblox.example.com/wapi/v2.1/"
+   designate_infoblox_auth_username: "username"
+   designate_infoblox_ns_group: "INFOBLOX"
+
+Configure Designate options in ``/etc/kolla/passwords.yml``
+
+.. code-block:: yaml
+
+    designate_infoblox_auth_password: "password"
+
+For more information about how the Infoblox backend works, see
+:designate-doc:`Infoblox backend <admin/backends/infoblox.html>`.
 
 Neutron and Nova Integration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``designate-sink`` is an optional service which listens for event
+notifications, such as compute.instance.create.end, handlers are
+available for Nova and Neutron. Notification events can then be used
+to trigger record creation & deletion.
+
+.. note::
+   Service ``designate-sink`` in kolla deployments is disabled by default
+   and can be enabled by ``designate_enable_notifications_sink: true``.
 
 Create default Designate Zone for Neutron:
 
@@ -66,7 +135,7 @@ Reconfigure Designate:
 
 .. code-block:: console
 
-   kolla-ansible reconfigure -i <INVENTORY_FILE> --tags designate
+   kolla-ansible reconfigure -i <INVENTORY_FILE> --tags designate,neutron,nova
 
 Verify operation
 ~~~~~~~~~~~~~~~~
@@ -81,7 +150,7 @@ Associate a domain to a network:
 
 .. code-block:: console
 
-   neutron net-update <NETWORK_ID> --dns_domain sample.openstack.org.
+   openstack network set <NETWORK_ID> --dns-domain sample.openstack.org.
 
 Start an instance:
 

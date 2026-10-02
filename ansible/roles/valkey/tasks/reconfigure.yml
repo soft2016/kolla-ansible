@@ -1,0 +1,3 @@
+---
+- name: Deploy valkey
+  ansible.builtin.import_tasks: deploy.yml

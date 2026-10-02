@@ -1,0 +1,11 @@
+appendonly yes
+bind {{ api_interface_address }}
+dir /var/lib/valkey
+logfile /var/log/kolla/valkey/valkey.log
+pidfile /var/run/valkey/valkey-server.pid
+port {{ valkey_server_port }}
+{% if not inventory_hostname == groups['valkey'][0] %}
+replicaof {{ 'api' | kolla_address(groups['valkey'][0]) }} {{ valkey_server_port }}
+{% endif %}
+requirepass {{ valkey_master_password }}
+masterauth {{ valkey_master_password }}

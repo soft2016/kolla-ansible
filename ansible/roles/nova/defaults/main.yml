@@ -1,400 +1,301 @@
 ---
-project_name: "nova"
-
 nova_services:
-  nova-libvirt:
-    container_name: nova_libvirt
-    group: compute
-    enabled: "{{ nova_compute_virt_type in ['kvm', 'qemu'] }}"
-    image: "{{ nova_libvirt_image_full }}"
-    pid_mode: "host"
-    privileged: True
-    volumes:
-      - "{{ node_config_directory }}/nova-libvirt/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/lib/modules:/lib/modules:ro"
-      - "/run/:/run/:shared"
-      - "/dev:/dev"
-      - "/sys/fs/cgroup:/sys/fs/cgroup"
-      - "kolla_logs:/var/log/kolla/"
-      - "libvirtd:/var/lib/libvirt"
-      - "{{ nova_instance_datadir_volume }}:/var/lib/nova/"
-      - "{% if enable_cinder_backend_nfs | bool %}/var/lib/nova/mnt:/var/lib/nova/mnt:shared{% endif %}"
-      - "nova_libvirt_qemu:/etc/libvirt/qemu"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
-    dimensions: "{{ nova_libvirt_dimensions }}"
-  nova-ssh:
-    container_name: "nova_ssh"
-    group: "compute"
-    image: "{{ nova_ssh_image_full }}"
-    enabled: "{{ enable_nova_ssh | bool }}"
-    volumes:
-      - "{{ node_config_directory }}/nova-ssh/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla"
-      - "{{ nova_instance_datadir_volume }}:/var/lib/nova"
-      - "{% if enable_cinder_backend_nfs | bool %}/var/lib/nova/mnt:/var/lib/nova/mnt:shared{% endif %}"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
-    dimensions: "{{ nova_ssh_dimensions }}"
-  placement-api:
-    container_name: "placement_api"
-    group: "placement-api"
-    image: "{{ placement_api_image_full }}"
-    enabled: True
-    volumes:
-      - "{{ node_config_directory }}/placement-api/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
-    dimensions: "{{ placement_api_dimensions }}"
-    haproxy:
-      placement_api:
-        enabled: "{{ enable_nova }}"
-        mode: "http"
-        external: false
-        port: "{{ placement_api_port }}"
-      placement_api_external:
-        enabled: "{{ enable_nova }}"
-        mode: "http"
-        external: true
-        port: "{{ placement_api_port }}"
   nova-api:
     container_name: "nova_api"
     group: "nova-api"
     image: "{{ nova_api_image_full }}"
-    enabled: True
-    privileged: True
-    volumes:
-      - "{{ node_config_directory }}/nova-api/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/lib/modules:/lib/modules:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
+    enabled: true
+    privileged: true
+    volumes: "{{ nova_api_default_volumes + nova_api_extra_volumes }}"
     dimensions: "{{ nova_api_dimensions }}"
+    healthcheck: "{{ nova_api_healthcheck }}"
+    wsgi: "nova.wsgi.osapi_compute:application"
     haproxy:
       nova_api:
         enabled: "{{ enable_nova }}"
         mode: "http"
         external: false
         port: "{{ nova_api_port }}"
+        listen_port: "{{ nova_api_listen_port }}"
+        tls_backend: "{{ nova_enable_tls_backend }}"
+        backend_http_extra:
+          - "option httpchk GET /"
+          - "http-check expect status 200"
       nova_api_external:
         enabled: "{{ enable_nova }}"
         mode: "http"
         external: true
-        port: "{{ nova_api_port }}"
+        external_fqdn: "{{ nova_external_fqdn }}"
+        port: "{{ nova_api_public_port }}"
+        listen_port: "{{ nova_api_listen_port }}"
+        tls_backend: "{{ nova_enable_tls_backend }}"
+        backend_http_extra:
+          - "option httpchk GET /"
+          - "http-check expect status 200"
+  nova-metadata:
+    container_name: "nova_metadata"
+    group: "nova-metadata"
+    image: "{{ nova_api_image_full }}"
+    enabled: true
+    volumes: "{{ nova_metadata_default_volumes + nova_metadata_extra_volumes }}"
+    dimensions: "{{ nova_metadata_dimensions }}"
+    healthcheck: "{{ nova_metadata_healthcheck }}"
+    wsgi: "nova.wsgi.metadata:application"
+    haproxy:
       nova_metadata:
         enabled: "{{ enable_nova }}"
         mode: "http"
         external: false
         port: "{{ nova_metadata_port }}"
-      nova_metadata_external:
-        enabled: "{{ enable_nova }}"
-        mode: "http"
-        external: true
-        port: "{{ nova_metadata_port }}"
-      nova_rdp:
-        enabled: "{{ enable_nova|bool and nova_console == 'rdp' }}"
-        mode: "http"
-        external: false
-        port: "{{ rdp_port }}"
-        host_group: "hyperv"
-  nova-consoleauth:
-    container_name: "nova_consoleauth"
-    group: "nova-consoleauth"
-    image: "{{ nova_consoleauth_image_full }}"
-    enabled: True
-    volumes:
-      - "{{ node_config_directory }}/nova-consoleauth/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
-    dimensions: "{{ nova_consoleauth_dimensions }}"
-  nova-novncproxy:
-    container_name: "nova_novncproxy"
-    group: "nova-novncproxy"
-    image: "{{ nova_novncproxy_image_full }}"
-    enabled: "{{ nova_console == 'novnc' }}"
-    volumes:
-      - "{{ node_config_directory }}/nova-novncproxy/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
-    dimensions: "{{ nova_novncproxy_dimensions }}"
-    haproxy:
-      nova_novncproxy:
-        enabled: "{{ enable_nova|bool and nova_console == 'novnc' }}"
-        mode: "http"
-        external: false
-        port: "{{ nova_novncproxy_port }}"
+        listen_port: "{{ nova_metadata_listen_port }}"
+        tls_backend: "{{ nova_enable_tls_backend }}"
         backend_http_extra:
-          - "timeout tunnel 1h"
-      nova_novncproxy_external:
-        enabled: "{{ enable_nova|bool and nova_console == 'novnc' }}"
+          - "option httpchk GET /"
+          - "http-check expect status 200"
+      nova_metadata_external:
+        enabled: "{{ nova_enable_external_metadata }}"
         mode: "http"
         external: true
-        port: "{{ nova_novncproxy_port }}"
+        external_fqdn: "{{ nova_metadata_external_fqdn }}"
+        port: "{{ nova_metadata_port }}"
+        listen_port: "{{ nova_metadata_listen_port }}"
+        tls_backend: "{{ nova_enable_tls_backend }}"
+        backend_http_extra:
+          - "option httpchk GET /"
+          - "http-check expect status 200"
   nova-scheduler:
     container_name: "nova_scheduler"
     group: "nova-scheduler"
     image: "{{ nova_scheduler_image_full }}"
-    enabled: True
-    volumes:
-      - "{{ node_config_directory }}/nova-scheduler/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
+    enabled: true
+    volumes: "{{ nova_scheduler_default_volumes + nova_scheduler_extra_volumes }}"
     dimensions: "{{ nova_scheduler_dimensions }}"
-  nova-spicehtml5proxy:
-    container_name: "nova_spicehtml5proxy"
-    group: "nova-spicehtml5proxy"
-    image: "{{ nova_spicehtml5proxy_image_full }}"
-    enabled: "{{ nova_console == 'spice' }}"
-    volumes:
-      - "{{ node_config_directory }}/nova-spicehtml5proxy/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
-    dimensions: "{{ nova_spicehtml5proxy_dimensions }}"
-    haproxy:
-      nova_spicehtml5proxy:
-        enabled: "{{ enable_nova|bool and nova_console == 'spice' }}"
-        mode: "http"
-        external: false
-        port: "{{ nova_spicehtml5proxy_port }}"
-      nova_spicehtml5proxy_external:
-        enabled: "{{ enable_nova|bool and nova_console == 'spice' }}"
-        mode: "http"
-        external: true
-        port: "{{ nova_spicehtml5proxy_port }}"
-  nova-serialproxy:
-    container_name: "nova_serialproxy"
-    group: "nova-serialproxy"
-    image: "{{ nova_serialproxy_image_full }}"
-    enabled: "{{ enable_nova_serialconsole_proxy | bool }}"
-    volumes:
-      - "{{ node_config_directory }}/nova-serialproxy/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
-    dimensions: "{{ nova_serialproxy_dimensions }}"
-    haproxy:
-      nova_serialconsole_proxy:
-        enabled: "{{ enable_nova|bool and enable_nova_serialconsole_proxy|bool }}"
-        mode: "http"
-        external: false
-        port: "{{ nova_serialproxy_port }}"
-        backend_http_extra:
-          - "timeout tunnel {{ haproxy_nova_serialconsole_proxy_tunnel_timeout }}"
-      nova_serialconsole_proxy_external:
-        enabled: "{{ enable_nova|bool and enable_nova_serialconsole_proxy|bool }}"
-        mode: "http"
-        external: true
-        port: "{{ nova_serialproxy_port }}"
-        backend_http_extra:
-          - "timeout tunnel {{ haproxy_nova_serialconsole_proxy_tunnel_timeout }}"
-  nova-conductor:
-    container_name: "nova_conductor"
-    group: "nova-conductor"
-    enabled: True
-    image: "{{ nova_conductor_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/nova-conductor/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
-    dimensions: "{{ nova_conductor_dimensions }}"
-  nova-compute:
-    container_name: "nova_compute"
-    group: "compute"
-    image: "{{ nova_compute_image_full }}"
-    environment:
-      LIBGUESTFS_BACKEND: "direct"
-    privileged: True
-    enabled: "{{ not enable_nova_fake | bool }}"
-    ipc_mode: "host"
-    volumes:
-      - "{{ node_config_directory }}/nova-compute/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/lib/modules:/lib/modules:ro"
-      - "/run:/run:shared"
-      - "/dev:/dev"
-      - "kolla_logs:/var/log/kolla/"
-      - "{% if enable_iscsid | bool %}iscsi_info:/etc/iscsi{% endif %}"
-      - "libvirtd:/var/lib/libvirt"
-      - "{{ nova_instance_datadir_volume }}:/var/lib/nova/"
-      - "{% if enable_cinder_backend_nfs | bool %}/var/lib/nova/mnt:/var/lib/nova/mnt:shared{% endif %}"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
-    dimensions: "{{ nova_compute_dimensions }}"
-  nova-compute-ironic:
-    container_name: "nova_compute_ironic"
-    group: "nova-compute-ironic"
-    image: "{{ nova_compute_ironic_image_full }}"
-    enabled: "{{ enable_ironic | bool }}"
-    volumes:
-      - "{{ node_config_directory }}/nova-compute-ironic/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/nova/nova:/var/lib/kolla/venv/lib/python2.7/site-packages/nova' if nova_dev_mode | bool else '' }}"
-    dimensions: "{{ nova_compute_ironic_dimensions }}"
+    healthcheck: "{{ nova_scheduler_healthcheck }}"
+  nova-super-conductor:
+    container_name: "nova_super_conductor"
+    group: "nova-super-conductor"
+    enabled: "{{ enable_cells }}"
+    image: "{{ nova_super_conductor_image_full }}"
+    volumes: "{{ nova_super_conductor_default_volumes + nova_super_conductor_extra_volumes }}"
+    dimensions: "{{ nova_super_conductor_dimensions }}"
+    healthcheck: "{{ nova_super_conductor_healthcheck }}"
 
 ####################
-# Ceph
+# Config Validate
 ####################
-ceph_nova_pool_type: "{{ ceph_pool_type }}"
-ceph_nova_cache_mode: "{{ ceph_cache_mode }}"
-
-# Due to Ansible issues on include, you cannot override these variables. Please
-# override the variables they reference instead.
-nova_pool_name: "{{ ceph_nova_pool_name }}"
-nova_pool_type: "{{ ceph_nova_pool_type }}"
-nova_cache_mode: "{{ ceph_nova_cache_mode }}"
-nova_pool_pg_num: "{{ ceph_pool_pg_num }}"
-nova_pool_pgp_num: "{{ ceph_pool_pgp_num }}"
-
-# Discard option for nova managed disks. Requires libvirt (1, 0, 6) or later and
-# qemu (1, 6, 0) or later. Set to "" to disable.
-nova_hw_disk_discard: "unmap"
-
-ceph_client_nova_keyring_caps:
-  mon: 'allow r, allow command "osd blacklist"'
-  osd: >-
-    allow class-read object_prefix rbd_children,
-    allow rwx pool={{ ceph_cinder_pool_name }},
-    allow rwx pool={{ ceph_cinder_pool_name }}-cache,
-    allow rwx pool={{ ceph_nova_pool_name }},
-    allow rwx pool={{ ceph_nova_pool_name }}-cache,
-    allow rwx pool={{ ceph_glance_pool_name }},
-    allow rwx pool={{ ceph_glance_pool_name }}-cache
-
+nova_config_validation:
+  - generator: "/nova/etc/nova/nova-config-generator.conf"
+    config: "/etc/nova/nova.conf"
 
 ####################
 # Database
 ####################
-nova_database_name: "nova"
-nova_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}nova{% endif %}"
-nova_database_address: "{{ database_address }}:{{ database_port }}"
-
 nova_api_database_name: "nova_api"
 nova_api_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}nova_api{% endif %}"
-nova_api_database_address: "{{ database_address }}:{{ database_port }}"
+nova_api_database_address: "{{ database_address | put_address_in_context('url') }}:{{ database_port }}"
+
+####################
+# Database sharding
+####################
+nova_database_shard_root_user: "{% if enable_proxysql | bool %}root_shard_{{ nova_database_shard_id }}{% else %}{{ database_user }}{% endif %}"
+nova_database_shard:
+  users:
+    - user: "{{ nova_api_database_user }}"
+      password: "{{ nova_api_database_password }}"
+      shard_id: "{{ nova_database_shard_id }}"
+  rules:
+    - schema: "{{ nova_api_database_name }}"
+      shard_id: "{{ nova_database_shard_id }}"
+    - user: "{{ nova_api_database_user }}"
+      shard_id: "{{ nova_database_shard_id }}"
+
 
 ####################
 # Docker
 ####################
-nova_install_type: "{{ kolla_install_type }}"
-nova_tag: "{{ openstack_release }}"
+nova_tag: "{{ openstack_tag }}"
 
-nova_libvirt_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-libvirt"
-nova_libvirt_tag: "{{ nova_tag }}"
-nova_libvirt_image_full: "{{ nova_libvirt_image }}:{{ nova_libvirt_tag }}"
-nova_libvirt_cpu_mode: "{{ 'host-passthrough' if ansible_architecture == 'aarch64' else '' }}"
+nova_super_conductor_image: "{{ docker_image_url }}nova-conductor"
+nova_super_conductor_tag: "{{ nova_tag }}"
+nova_super_conductor_image_full: "{{ nova_super_conductor_image }}:{{ nova_super_conductor_tag }}"
 
-nova_ssh_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-ssh"
-nova_ssh_tag: "{{ nova_tag }}"
-nova_ssh_image_full: "{{ nova_ssh_image }}:{{ nova_ssh_tag }}"
-
-nova_conductor_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-conductor"
-nova_conductor_tag: "{{ nova_tag }}"
-nova_conductor_image_full: "{{ nova_conductor_image }}:{{ nova_conductor_tag }}"
-
-nova_consoleauth_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-consoleauth"
-nova_consoleauth_tag: "{{ nova_tag }}"
-nova_consoleauth_image_full: "{{ nova_consoleauth_image }}:{{ nova_consoleauth_tag }}"
-
-nova_novncproxy_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-novncproxy"
-nova_novncproxy_tag: "{{ nova_tag }}"
-nova_novncproxy_image_full: "{{ nova_novncproxy_image }}:{{ nova_novncproxy_tag }}"
-
-nova_spicehtml5proxy_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-spicehtml5proxy"
-nova_spicehtml5proxy_tag: "{{ nova_tag }}"
-nova_spicehtml5proxy_image_full: "{{ nova_spicehtml5proxy_image }}:{{ nova_spicehtml5proxy_tag }}"
-
-nova_scheduler_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-scheduler"
+nova_scheduler_image: "{{ docker_image_url }}nova-scheduler"
 nova_scheduler_tag: "{{ nova_tag }}"
 nova_scheduler_image_full: "{{ nova_scheduler_image }}:{{ nova_scheduler_tag }}"
 
-nova_compute_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-compute"
-nova_compute_tag: "{{ nova_tag }}"
-nova_compute_image_full: "{{ nova_compute_image }}:{{ nova_compute_tag }}"
-
-nova_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-api"
+nova_api_image: "{{ docker_image_url }}nova-api"
 nova_api_tag: "{{ nova_tag }}"
 nova_api_image_full: "{{ nova_api_image }}:{{ nova_api_tag }}"
 
-nova_compute_ironic_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-compute-ironic"
-nova_compute_ironic_tag: "{{ nova_tag }}"
-nova_compute_ironic_image_full: "{{ nova_compute_ironic_image }}:{{ nova_compute_ironic_tag }}"
-
-nova_serialproxy_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-serialproxy"
-nova_serialproxy_tag: "{{ nova_tag }}"
-nova_serialproxy_image_full: "{{ nova_serialproxy_image }}:{{ nova_serialproxy_tag }}"
-
-placement_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ nova_install_type }}-nova-placement-api"
-placement_api_tag: "{{ nova_tag }}"
-placement_api_image_full: "{{ placement_api_image }}:{{ placement_api_tag }}"
-
-nova_libvirt_dimensions: "{{ default_container_dimensions }}"
-nova_ssh_dimensions: "{{ default_container_dimensions }}"
-placement_api_dimensions: "{{ default_container_dimensions }}"
 nova_api_dimensions: "{{ default_container_dimensions }}"
-nova_consoleauth_dimensions: "{{ default_container_dimensions }}"
-nova_novncproxy_dimensions: "{{ default_container_dimensions }}"
+nova_metadata_dimensions: "{{ default_container_dimensions }}"
 nova_scheduler_dimensions: "{{ default_container_dimensions }}"
-nova_spicehtml5proxy_dimensions: "{{ default_container_dimensions }}"
-nova_serialproxy_dimensions: "{{ default_container_dimensions }}"
-nova_conductor_dimensions: "{{ default_container_dimensions }}"
-nova_compute_dimensions: "{{ default_container_dimensions }}"
-nova_compute_ironic_dimensions: "{{ default_container_dimensions }}"
+nova_super_conductor_dimensions: "{{ default_container_dimensions }}"
 
-####################
-# HAProxy
-####################
-haproxy_nova_serialconsole_proxy_tunnel_timeout: "10m"
+nova_api_enable_healthchecks: "{{ enable_container_healthchecks }}"
+nova_api_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+nova_api_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+nova_api_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+nova_api_healthcheck_test:
+  - "CMD-SHELL"
+  - >-
+    healthcheck_curl {{ 'https' if nova_enable_tls_backend | bool else 'http' }}://{{
+    api_interface_address | put_address_in_context('url') }}:{{ nova_api_listen_port }}
+nova_api_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+nova_api_healthcheck:
+  interval: "{{ nova_api_healthcheck_interval }}"
+  retries: "{{ nova_api_healthcheck_retries }}"
+  start_period: "{{ nova_api_healthcheck_start_period }}"
+  test: "{% if nova_api_enable_healthchecks | bool %}{{ nova_api_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ nova_api_healthcheck_timeout }}"
+
+nova_metadata_enable_healthchecks: "{{ enable_container_healthchecks }}"
+nova_metadata_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+nova_metadata_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+nova_metadata_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+nova_metadata_healthcheck_test:
+  - "CMD-SHELL"
+  - >-
+    healthcheck_curl {{ 'https' if nova_enable_tls_backend | bool else 'http' }}://{{
+    api_interface_address | put_address_in_context('url') }}:{{ nova_metadata_listen_port }}
+nova_metadata_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+nova_metadata_healthcheck:
+  interval: "{{ nova_metadata_healthcheck_interval }}"
+  retries: "{{ nova_metadata_healthcheck_retries }}"
+  start_period: "{{ nova_metadata_healthcheck_start_period }}"
+  test: "{% if nova_metadata_enable_healthchecks | bool %}{{ nova_metadata_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ nova_metadata_healthcheck_timeout }}"
+
+nova_scheduler_enable_healthchecks: "{{ enable_container_healthchecks }}"
+nova_scheduler_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+
+# NOTE(mikal): this one is deliberately overridden because of the issues discussed
+# in releasenotes/notes/nova-scheduler-healthcheck-retries-12e681b16f6322aa.yaml
+nova_scheduler_healthcheck_retries: 8
+
+nova_scheduler_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+nova_scheduler_healthcheck_test: ["CMD-SHELL", "healthcheck_port nova-scheduler {{ om_rpc_port }}"]
+nova_scheduler_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+nova_scheduler_healthcheck:
+  interval: "{{ nova_scheduler_healthcheck_interval }}"
+  retries: "{{ nova_scheduler_healthcheck_retries }}"
+  start_period: "{{ nova_scheduler_healthcheck_start_period }}"
+  test: "{% if nova_scheduler_enable_healthchecks | bool %}{{ nova_scheduler_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ nova_scheduler_healthcheck_timeout }}"
+
+nova_super_conductor_enable_healthchecks: "{{ enable_container_healthchecks }}"
+nova_super_conductor_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+nova_super_conductor_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+nova_super_conductor_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+nova_super_conductor_healthcheck_test: ["CMD-SHELL", "healthcheck_port nova-conductor {{ om_rpc_port }}"]
+nova_super_conductor_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+nova_super_conductor_healthcheck:
+  interval: "{{ nova_super_conductor_healthcheck_interval }}"
+  retries: "{{ nova_super_conductor_healthcheck_retries }}"
+  start_period: "{{ nova_super_conductor_healthcheck_start_period }}"
+  test: "{% if nova_super_conductor_enable_healthchecks | bool %}{{ nova_super_conductor_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ nova_super_conductor_healthcheck_timeout }}"
+
+nova_api_default_volumes:
+  - "{{ node_config_directory }}/nova-api/:{{ container_config_directory }}/:ro"
+  - "/lib/modules:/lib/modules:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ '/dev/shm:/dev/shm' }}"
+  - "{{ kolla_dev_repos_directory ~ '/nova:/dev-mode/nova' if nova_dev_mode | bool else '' }}"
+nova_metadata_default_volumes:
+  - "{{ node_config_directory }}/nova-metadata/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/nova:/dev-mode/nova' if nova_dev_mode | bool else '' }}"
+nova_scheduler_default_volumes:
+  - "{{ node_config_directory }}/nova-scheduler/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ '/dev/shm:/dev/shm' }}"
+  - "{{ kolla_dev_repos_directory ~ '/nova:/dev-mode/nova' if nova_dev_mode | bool else '' }}"
+nova_super_conductor_default_volumes:
+  - "{{ node_config_directory }}/nova-super-conductor/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ '/dev/shm:/dev/shm' }}"
+  - "{{ kolla_dev_repos_directory ~ '/nova:/dev-mode/nova' if nova_dev_mode | bool else '' }}"
+# Used by bootstrapping containers.
+nova_api_bootstrap_default_volumes:
+  - "{{ node_config_directory }}/nova-api-bootstrap/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/nova:/dev-mode/nova' if nova_dev_mode | bool else '' }}"
+
+nova_extra_volumes: "{{ default_extra_volumes }}"
+nova_api_extra_volumes: "{{ nova_extra_volumes }}"
+nova_metadata_extra_volumes: "{{ nova_extra_volumes }}"
+nova_scheduler_extra_volumes: "{{ nova_extra_volumes }}"
+nova_super_conductor_extra_volumes: "{{ nova_extra_volumes }}"
+# Used by bootstrapping containers.
+nova_api_bootstrap_extra_volumes: "{{ nova_extra_volumes }}"
+
 
 ####################
 # OpenStack
 ####################
-nova_legacy_admin_endpoint: "{{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ nova_api_port }}/v2/%(tenant_id)s"
-nova_legacy_internal_endpoint: "{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ nova_api_port }}/v2/%(tenant_id)s"
-nova_legacy_public_endpoint: "{{ public_protocol }}://{{ kolla_external_fqdn }}:{{ nova_api_port }}/v2/%(tenant_id)s"
+nova_legacy_internal_endpoint: "{{ nova_internal_base_endpoint }}/v2/%(tenant_id)s"
+nova_legacy_public_endpoint: "{{ nova_public_base_endpoint }}/v2/%(tenant_id)s"
 
-nova_admin_endpoint: "{{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ nova_api_port }}/v2.1/%(tenant_id)s"
-nova_internal_endpoint: "{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ nova_api_port }}/v2.1/%(tenant_id)s"
-nova_public_endpoint: "{{ public_protocol }}://{{ kolla_external_fqdn }}:{{ nova_api_port }}/v2.1/%(tenant_id)s"
-
-placement_admin_endpoint: "{{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ placement_api_port }}"
-placement_internal_endpoint: "{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ placement_api_port }}"
-placement_public_endpoint: "{{ public_protocol }}://{{ kolla_external_fqdn }}:{{ placement_api_port }}"
+nova_internal_endpoint: "{{ nova_internal_base_endpoint }}/v2.1"
+nova_public_endpoint: "{{ nova_public_base_endpoint }}/v2.1"
 
 nova_logging_debug: "{{ openstack_logging_debug }}"
 
 openstack_nova_auth: "{{ openstack_auth }}"
-openstack_placement_auth: "{{ openstack_auth }}"
 
-nova_compute_host_rp_filter_mode: 0
-nova_enable_rolling_upgrade: "yes"
-nova_safety_upgrade: "no"
+nova_services_require_policy_yaml:
+  - nova-api
+  - nova-metadata
 
-nova_libvirt_port: "16509"
-nova_ssh_port: "8022"
+nova_enable_external_metadata: "no"
+
+nova_api_workers: "{{ openstack_service_workers }}"
+nova_superconductor_workers: "{{ openstack_service_workers }}"
+nova_metadata_api_workers: "{{ openstack_service_workers }}"
+nova_scheduler_workers: "{{ openstack_service_workers }}"
+
+nova_enable_nova_legacy_service: false
+
+####################
+# Keystone
+####################
+nova_ks_services:
+  - name: "nova_legacy"
+    type: "compute_legacy"
+    description: "OpenStack Compute Service (Legacy 2.0)"
+    endpoints:
+      - {'interface': 'internal', 'url': '{{ nova_legacy_internal_endpoint }}'}
+      - {'interface': 'public', 'url': '{{ nova_legacy_public_endpoint }}'}
+    enabled: "{{ nova_enable_nova_legacy_service | bool }}"
+  - name: "nova"
+    type: "compute"
+    description: "OpenStack Compute Service"
+    endpoints:
+      - {'interface': 'internal', 'url': '{{ nova_internal_endpoint }}'}
+      - {'interface': 'public', 'url': '{{ nova_public_endpoint }}'}
+
+nova_ks_users:
+  - project: "service"
+    user: "{{ nova_keystone_user }}"
+    password: "{{ nova_keystone_password }}"
+    role: "admin"
+
+nova_ks_user_roles:
+  - project: "service"
+    user: "{{ nova_keystone_user }}"
+    role: "service"
 
 ####################
 # Notification
 ####################
 nova_notification_topics:
   - name: notifications
-    enabled: "{{ enable_ceilometer | bool or enable_searchlight | bool or enable_neutron_infoblox_ipam_agent | bool }}"
-  - name: notifications_designate
-    enabled: "{{ enable_designate | bool }}"
+    enabled: "{{ enable_ceilometer | bool }}"
+  - name: "{{ designate_notifications_topic_name }}"
+    enabled: "{{ designate_enable_notifications_sink | bool }}"
 
 nova_enabled_notification_topics: "{{ nova_notification_topics | selectattr('enabled', 'equalto', true) | list }}"
-
-####################
-# VMware
-####################
-vmware_vcenter_datastore_regex: ".*"
-ovs_bridge: "nsx-managed"
-
 
 ####################
 # Kolla
@@ -403,3 +304,10 @@ nova_git_repository: "{{ kolla_dev_repos_git }}/{{ project_name }}"
 nova_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
 nova_dev_mode: "{{ kolla_dev_mode }}"
 nova_source_version: "{{ kolla_source_version }}"
+
+####################
+# TLS
+####################
+nova_enable_tls_backend: "{{ kolla_enable_tls_backend }}"
+nova_copy_certs: "{{ kolla_copy_ca_into_containers | bool or nova_enable_tls_backend | bool or nova_database_enable_tls_internal | bool }}"
+nova_database_enable_tls_internal: "{{ database_enable_tls_internal | bool }}"

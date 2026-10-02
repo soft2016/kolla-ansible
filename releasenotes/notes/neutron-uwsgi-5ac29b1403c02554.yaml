@@ -1,0 +1,11 @@
+---
+upgrade:
+  - |
+    ``Neutron`` now runs its API workers under uWSGI and moves auxiliary
+    processes into dedicated containers, matching the upstream deployment
+    model. TLS is terminated directly on uWSGI, so the ``neutron-tls-proxy``
+    service was removed. New containers introduced with this change include:
+
+    * ``neutron-ovn-maintenance-worker``
+    * ``neutron-rpc-server``
+    * ``neutron-periodic-workers``

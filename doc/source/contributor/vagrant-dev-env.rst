@@ -1,5 +1,3 @@
-.. vagrant-dev-env:
-
 ====================================
 Development Environment with Vagrant
 ====================================
@@ -42,19 +40,18 @@ choice. Various downloads can be found at the `Vagrant downloads
 
 Install required dependencies as follows:
 
-For CentOS 7 or later:
+For CentOS or RHEL 8:
 
 .. code-block:: console
 
-   sudo yum install ruby-devel libvirt-devel zlib-devel libpng-devel gcc \
-   qemu-kvm qemu-img libvirt libvirt-python libvirt-client virt-install \
-   bridge-utils git
+   sudo dnf install ruby-devel libvirt-devel zlib-devel libpng-devel gcc \
+   qemu-kvm qemu-img libvirt python3-libvirt libvirt-client virt-install git
 
 For Ubuntu 16.04 or later:
 
 .. code-block:: console
 
-   sudo apt-get install vagrant ruby-dev ruby-libvirt python-libvirt \
+   sudo apt install vagrant ruby-dev ruby-libvirt python-libvirt \
    qemu-utils qemu-kvm libvirt-dev nfs-kernel-server zlib1g-dev libpng12-dev \
    gcc git
 
@@ -69,12 +66,6 @@ Next install the hostmanager plugin so all hosts are recorded in ``/etc/hosts``
 .. code-block:: console
 
    vagrant plugin install vagrant-hostmanager
-
-If you are going to use VirtualBox, then install vagrant-vbguest:
-
-.. code-block:: console
-
-   vagrant plugin install vagrant-vbguest
 
 Vagrant supports a wide range of virtualization technologies. If VirtualBox is
 used, the vbguest plugin will be required to install the VirtualBox Guest
@@ -155,9 +146,9 @@ Find a location in the system's home directory and checkout Kolla repos:
 
 .. code-block:: console
 
-   git clone https://git.openstack.org/openstack/kolla-cli
-   git clone https://git.openstack.org/openstack/kolla-ansible
-   git clone https://git.openstack.org/openstack/kolla
+   git clone https://opendev.org/openstack/kolla-cli
+   git clone https://opendev.org/openstack/kolla-ansible
+   git clone https://opendev.org/openstack/kolla
 
 All repos must share the same parent directory so the bootstrap code can
 locate them.
@@ -203,10 +194,19 @@ Once logged on the **operator** VM call the ``kolla-build`` utility:
 
    kolla-build
 
-``kolla-build`` accept arguments as documented in `Building Container Images
-<https://docs.openstack.org/kolla/latest/admin/image-building.html>`_.
+``kolla-build`` accept arguments as documented in
+:kolla-doc:`Building Container Images <admin/image-building.html>`.
 It builds Docker images and pushes them to the local registry if the **push**
 option is enabled (in Vagrant this is the default behaviour).
+
+Generating passwords
+--------------------
+
+Before proceeding with the deployment you must generate the service passwords:
+
+.. code-block:: console
+
+   kolla-genpwd
 
 Deploying OpenStack with Kolla
 ------------------------------
@@ -217,7 +217,11 @@ To deploy **all-in-one**:
 
    sudo kolla-ansible deploy
 
-To deploy multinode:
+To deploy **multinode**:
+
+Ensure that the nodes deployed by Vagrant match those specified in the
+inventory file:
+``/usr/share/kolla-ansible/ansible/inventory/multinode``.
 
 For Centos 7:
 
@@ -236,7 +240,8 @@ Validate OpenStack is operational:
 .. code-block:: console
 
    kolla-ansible post-deploy
-   . /etc/kolla/admin-openrc.sh
+   export OS_CLIENT_CONFIG_FILE=/etc/kolla/clouds.yaml
+   export OS_CLOUD=kolla-admin
    openstack user list
 
 Or navigate to ``http://172.28.128.254/`` with a web browser.

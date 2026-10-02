@@ -1,5 +1,5 @@
 {% set cron_cmd = 'cron -f' if kolla_base_distro in ['ubuntu', 'debian'] else 'crond -s -n' %}
-{% set cron_path = '/var/spool/cron/crontabs/root/fernet-cron' if kolla_base_distro in ['ubuntu', 'debian'] else '/var/spool/cron/root' %}
+{% set cron_path = '/var/spool/cron/crontabs/root' if kolla_base_distro in ['ubuntu', 'debian'] else '/var/spool/cron/root' %}
 {
     "command": "{{ cron_cmd }}",
     "config_files": [{
@@ -27,6 +27,12 @@
             "perm": "0755"
         },
         {
+            "source": "{{ container_config_directory }}/fernet-push.sh",
+            "dest": "/usr/bin/fernet-push.sh",
+            "owner": "root",
+            "perm": "0755"
+        },
+        {
             "source": "{{ container_config_directory }}/ssh_config",
             "dest": "/var/lib/keystone/.ssh/config",
             "owner": "keystone",
@@ -43,6 +49,42 @@
             "dest": "/etc/keystone/{{ keystone_policy_file }}",
             "owner": "keystone",
             "perm": "0600"
+        }{% endif %}{% if keystone_fernet_enable_healthchecks | bool %},
+        {
+            "source": "{{ container_config_directory }}/fernet-healthcheck.sh",
+            "dest": "/usr/bin/fernet-healthcheck.sh",
+            "owner": "root",
+            "perm": "0755"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
         }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/keystone",
+            "owner": "keystone:kolla",
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/keystone/*.log",
+            "owner": "keystone:kolla",
+            "perm": "0664"
+        },
+        {
+            "path": "/etc/keystone/fernet-keys",
+            "owner": "keystone:keystone",
+            "perm": "0770"
+        }
     ]
 }

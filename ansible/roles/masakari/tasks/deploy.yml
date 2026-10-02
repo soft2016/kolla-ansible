@@ -1,0 +1,19 @@
+---
+- name: Register masakari in Keystone
+  ansible.builtin.import_tasks: register.yml
+
+- name: Configure masakari
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check masakari containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone masakari repository
+  ansible.builtin.include_tasks: clone.yml
+  when: masakari_dev_mode | bool
+
+- name: Bootstrap masakari service
+  ansible.builtin.import_tasks: bootstrap.yml
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

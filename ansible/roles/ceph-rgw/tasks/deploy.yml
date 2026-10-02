@@ -1,0 +1,3 @@
+---
+- name: Register ceph-rgw in Keystone
+  ansible.builtin.import_tasks: register.yml

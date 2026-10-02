@@ -1,0 +1,11 @@
+---
+upgrade:
+  - |
+    Support for deploying ``ironic-inspector`` has been dropped following the
+    service's retirement upstream. The remaining variables and artifacts were
+    renamed for consistency: ``ironic_inspector_kernel_cmdline_extras`` becomes
+    ``ironic_kernel_cmdline_extras``, ``ironic_inspector_pxe_filter`` becomes
+    ``ironic_pxe_filter``, and ``inspector.ipxe`` becomes ``ipa.ipxe``.
+  - |
+    ``bifrost`` also removed its legacy inspector integration, so the
+    ``bifrost_enable_ironic_inspector`` option has been deleted.

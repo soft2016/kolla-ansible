@@ -15,8 +15,6 @@ backends:
 
 * file
 * ceph
-* vmware
-* swift
 
 File backend
 ~~~~~~~~~~~~
@@ -39,10 +37,10 @@ Usage of glance file backend under shared filesystem:
 Ceph backend
 ~~~~~~~~~~~~
 
-To make use of ``ceph`` backend in glance, simply enable ceph or external ceph.
+To make use of ``ceph`` backend in glance, simply enable external ceph.
 By default will enable backend ceph automatically.
-Please refer to :doc:`../storage/ceph-guide`
-or :doc:`../storage/external-ceph-guide` on how to configure this backend.
+Please refer to :doc:`../storage/external-ceph-guide`
+on how to configure this backend.
 
 To enable the ceph backend manually:
 
@@ -50,32 +48,65 @@ To enable the ceph backend manually:
 
    glance_backend_ceph: "yes"
 
-VMware backend
-~~~~~~~~~~~~~~
+Glance with S3 Backend
+~~~~~~~~~~~~~~~~~~~~~~
 
-To make use of VMware datastores as a glance backend,
-enable `glance_backend_vmware` and refer to :doc:`../compute/vmware-guide` for
-further VMware configuration.
+Configuring Glance for S3 includes the following steps:
 
-To enable the vmware backend manually:
+#. Enable Glance S3 backend in ``globals.yml``:
 
 .. code-block:: yaml
 
-   glance_backend_vmware: "yes"
+   glance_backend_s3: "yes"
 
-Swift backend
-~~~~~~~~~~~~~
+#. Configure S3 connection details in ``/etc/kolla/globals.yml``:
 
-To store glance images in a swift cluster, the ``swift`` backend should
-be enabled.  Refer to :doc:`../storage/swift-guide` on how to configure
-swift in kolla.
-If ceph is enabled, will have higher precedence over swift as glance backend.
+   * ``glance_backend_s3_url`` (example: ``http://127.0.0.1:9000``)
+   * ``glance_backend_s3_access_key`` (example: ``minio``)
+   * ``glance_backend_s3_bucket`` (example: ``glance``)
+   * ``glance_backend_s3_secret_key`` (example: ``admin``)
 
-To enable the swift backend manually:
+#. If you wish to use a single S3 backend for all supported services,
+use the following variables:
+
+   * ``s3_url``
+   * ``s3_access_key``
+   * ``s3_glance_bucket``
+   * ``s3_secret_key``
+
+   All Glance S3 configurations use these options as default values.
+
+Cinder backends requiring privileged containers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Some Glance deployments use the ``cinder`` store driver. In such cases,
+Glance API containers need to run in ``privileged`` mode and have the
+``/dev`` directory bind-mounted from the host if the selected Cinder
+backend relies on os-brick to attach volumes.
+
+Historically this was only enabled automatically for iSCSI and Ceph
+backends. A new toggle has been added to simplify configuration:
 
 .. code-block:: yaml
 
-   glance_backend_swift: "yes"
+   enable_cinder_backend_privileged: true
+
+By default this option evaluates to ``true`` when
+``enable_cinder_backend_iscsi``, ``cinder_backend_ceph`` or
+``enable_cinder_backend_vast`` are enabled, and to ``false`` otherwise.
+Operators can override it manually if using other Cinder backends that
+also require privileged mode, such as PowerFlex (ScaleIO) or FibreChannel.
+
+Effect of setting this option:
+
+* Glance API container runs with ``privileged: true``.
+* The host's ``/dev`` directory is mounted into the container.
+
+Without this setting, image upload via Cinder store backends that rely
+on os-brick may fail with errors such as::
+
+   oslo_privsep.daemon.FailedToDropPrivileges: Privsep daemon failed to start
+   os_brick.exception.BrickException: ScaleIO volume <id> not found at expected path
 
 Upgrading glance
 ----------------
@@ -100,7 +131,7 @@ need to be enabled.
 
 .. code-block:: yaml
 
-   glance_enable_rolling_upgrade: "yes"
+   glance_enable_rolling_upgrade: true
 
 .. warning::
 
@@ -119,7 +150,7 @@ It is the default mode, ensure rolling upgrade method is not enabled.
 
 .. code-block:: yaml
 
-   glance_enable_rolling_upgrade: "no"
+   glance_enable_rolling_upgrade: false
 
 
 Other configuration
@@ -132,7 +163,7 @@ Glance cache is disabled by default, it can be enabled by:
 
 .. code-block:: yaml
 
-   enable_glance_image_cache: "yes"
+   enable_glance_image_cache: true
    glance_cache_max_size: "10737418240" # 10GB by default
 
 .. warning::
@@ -144,5 +175,34 @@ Glance cache is disabled by default, it can be enabled by:
 
 Glance caches are not cleaned up automatically, the glance team recommends to
 use a cron service to regularly clean cached images. In the future kolla will
-deploy a cron container to manage such clean ups.  Please refer to `Glance
-image cache <https://docs.openstack.org/glance/latest/admin/cache.html>`__.
+deploy a cron container to manage such clean ups.  Please refer to
+:glance-doc:`Glance image cache <admin/cache.html>`.
+
+Property protection
+~~~~~~~~~~~~~~~~~~~
+
+`Property protection <https://docs.openstack.org/glance/latest/admin/property-protections.html>`_
+is disabled by default, it can be enabled by:
+
+.. code-block:: yaml
+
+   glance_enable_property_protection: true
+
+
+and defining ``property-protections-rules.conf`` under
+``{{ node_custom_config }}/glance/``. The default
+``property_protection_rule_format`` is ``roles`` but it can be overwritten.
+
+
+Interoperable image import
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The `interoperable image import <https://docs.openstack.org/glance/latest/admin/interoperable-image-import.html>`_
+is disabled by default, it can be enabled by:
+
+.. code-block:: yaml
+
+  glance_enable_interoperable_image_import: true
+
+and defining ``glance-image-import.conf`` under
+``{{ node_custom_config }}/glance/``.

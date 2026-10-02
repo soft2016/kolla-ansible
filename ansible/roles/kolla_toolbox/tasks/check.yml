@@ -1,0 +1,4 @@
+---
+- name: Checking kolla_toolbox containers
+  ansible.builtin.import_role:
+    role: service-check

@@ -1,0 +1,34 @@
+---
+- name: Load and persist kernel modules
+  ansible.builtin.include_role:
+    name: module-load
+  vars:
+    modules: "{{ neutron_modules_default + neutron_modules_extra }}"
+  when: >-
+    neutron_services |
+    select_services_enabled_and_mapped_to_host |
+    list |
+    intersect(["neutron-l3-agent", "neutron-openvswitch-agent"]) |
+    list |
+    length > 0
+
+- name: Check IPv6 support
+  ansible.builtin.command: /usr/sbin/sysctl -n net.ipv6.conf.all.disable_ipv6
+  register: ipv6_disabled
+  changed_when: false
+
+- name: Setting sysctl values
+  ansible.builtin.include_role:
+    name: sysctl
+  vars:
+    service: "{{ neutron_services['neutron-l3-agent'] }}"
+    settings:
+      - { name: "net.ipv4.neigh.default.gc_thresh1", value: "{{ neutron_l3_agent_host_ipv4_neigh_gc_thresh1 }}"}
+      - { name: "net.ipv4.neigh.default.gc_thresh2", value: "{{ neutron_l3_agent_host_ipv4_neigh_gc_thresh2 }}"}
+      - { name: "net.ipv4.neigh.default.gc_thresh3", value: "{{ neutron_l3_agent_host_ipv4_neigh_gc_thresh3 }}"}
+      - { name: "net.ipv6.neigh.default.gc_thresh1", value: "{{ neutron_l3_agent_host_ipv6_neigh_gc_thresh1 }}"}
+      - { name: "net.ipv6.neigh.default.gc_thresh2", value: "{{ neutron_l3_agent_host_ipv6_neigh_gc_thresh2 }}"}
+      - { name: "net.ipv6.neigh.default.gc_thresh3", value: "{{ neutron_l3_agent_host_ipv6_neigh_gc_thresh3 }}"}
+  when:
+    - set_sysctl | bool
+    - service | service_enabled_and_mapped_to_host

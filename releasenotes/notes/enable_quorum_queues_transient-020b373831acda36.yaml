@@ -1,0 +1,8 @@
+---
+features:
+  - |
+    Make use of quorum queues for transient/fanout queues.
+    This helps OpenStack services to be more resilient to message broker
+    failures.
+    This feature is enabled by default.
+    See also `LP#2078339 <https://bugs.launchpad.net/kolla-ansible/+bug/2078339>`_.

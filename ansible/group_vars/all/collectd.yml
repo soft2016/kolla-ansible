@@ -1,0 +1,4 @@
+---
+enable_collectd: false
+
+collectd_udp_port: "25826"

@@ -1,43 +1,37 @@
 ---
-- name: Copy over ceph.conf file
-  template:
-    src: "{{ node_custom_config }}/gnocchi/ceph.conf"
-    dest: "{{ node_config_directory }}/{{ item }}/ceph.conf"
+- name: Ensuring gnocchi service ceph config subdir exists
+  ansible.builtin.file:
+    path: "{{ node_config_directory }}/{{ item.key }}/ceph"
+    state: "directory"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
   become: true
-  when: inventory_hostname in groups[item]
-  with_items:
-    - "gnocchi-api"
-    - "gnocchi-metricd"
-    - "gnocchi-statsd"
-  notify:
-    - Restart gnocchi-api container
-    - Restart gnocchi-metricd container
-    - Restart gnocchi-statsd container
+  with_dict: "{{ gnocchi_services | select_services_enabled_and_mapped_to_host }}"
 
-- name: Copy over ceph gnocchi keyring
-  copy:
-    src: "{{ node_custom_config }}/gnocchi/ceph.client.gnocchi.keyring"
-    dest: "{{ node_config_directory }}/{{ item }}/ceph.client.gnocchi.keyring"
+- name: Copy over ceph config for Gnocchi
+  merge_configs:
+    sources:
+      - "{{ node_custom_config }}/gnocchi/{{ ceph_cluster }}.conf"
+      - "{{ node_custom_config }}/gnocchi/{{ item.key }}/{{ ceph_cluster }}.conf"
+    dest: "{{ node_config_directory }}/{{ item.key }}/ceph/{{ ceph_cluster }}.conf"
+    mode: "0660"
   become: true
-  when: inventory_hostname in groups[item]
-  with_items:
-    - "gnocchi-api"
-    - "gnocchi-metricd"
-    - "gnocchi-statsd"
-  notify:
-    - Restart gnocchi-api container
-    - Restart gnocchi-metricd container
-    - Restart gnocchi-statsd container
+  with_dict: "{{ gnocchi_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: Copy over ceph Gnocchi keyrings
+  ansible.builtin.template:
+    src: "{{ node_custom_config }}/gnocchi/{{ ceph_cluster }}.client.{{ ceph_gnocchi_user }}.keyring"
+    dest: "{{ node_config_directory }}/{{ item.key }}/ceph/{{ ceph_cluster }}.client.{{ ceph_gnocchi_user }}.keyring"
+    mode: "0660"
+  become: true
+  with_dict: "{{ gnocchi_services | select_services_enabled_and_mapped_to_host }}"
 
 - name: Ensuring config directory has correct owner and permission
   become: true
-  file:
-    path: "{{ node_config_directory }}/{{ item }}"
-    recurse: yes
+  ansible.builtin.file:
+    path: "{{ node_config_directory }}/{{ item.key }}"
+    recurse: true
     owner: "{{ config_owner_user }}"
     group: "{{ config_owner_group }}"
-  when: inventory_hostname in groups[item]
-  with_items:
-    - "gnocchi-api"
-    - "gnocchi-metricd"
-    - "gnocchi-statsd"
+  with_dict: "{{ gnocchi_services | select_services_enabled_and_mapped_to_host }}"

@@ -1,0 +1,23 @@
+---
+- name: Ensure apt sources list directory exists
+  become: true
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d
+    state: directory
+    recurse: true
+
+- name: Enable Ceph apt repository
+  become: true
+  ansible.builtin.apt_repository:
+    repo: "{{ cephadm_ceph_apt_repo }}"
+    filename: ceph
+  when: not cephadm_use_package_from_distribution | bool
+
+- name: Install cephadm
+  become: true
+  ansible.builtin.apt:
+    name:
+      - cephadm
+      - python3-jinja2
+      - python3-yaml
+    install_recommends: false

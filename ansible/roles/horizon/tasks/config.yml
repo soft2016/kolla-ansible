@@ -1,46 +1,39 @@
 ---
 - name: Ensuring config directories exist
   become: true
-  file:
+  ansible.builtin.file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
     owner: "{{ config_owner_user }}"
     group: "{{ config_owner_group }}"
     mode: "0770"
-  when:
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ horizon_services }}"
+  with_dict: "{{ horizon_services | select_services_enabled_and_mapped_to_host }}"
 
-- set_fact:
+- name: Set empty custom policy
+  ansible.builtin.set_fact:
     custom_policy: []
 
-- include_tasks: policy_item.yml
+- name: Include tasks from policy_item.yml
+  ansible.builtin.include_tasks: policy_item.yml
   vars:
     project_name: "{{ item.name }}"
   when: item.enabled | bool
   with_items:
-    - { name: "ceilometer", enabled: "{{ enable_ceilometer }}" }
-    - { name: "cinder", enabled: "{{ enable_cinder }}" }
-    - { name: "congress", enabled: "{{ enable_congress }}" }
+    - { name: "ceilometer", enabled: "{{ enable_ceilometer_horizon_policy_file }}" }
+    - { name: "cinder", enabled: "{{ enable_cinder_horizon_policy_file }}" }
     - { name: "cloudkitty", enabled: "{{ enable_horizon_cloudkitty }}" }
     - { name: "designate", enabled: "{{ enable_horizon_designate }}" }
-    - { name: "freezer", enabled: "{{ enable_horizon_freezer }}" }
-    - { name: "glance", enabled: "{{ enable_glance }}" }
-    - { name: "heat", enabled: "{{ enable_heat }}" }
+    - { name: "glance", enabled: "{{ enable_glance_horizon_policy_file }}" }
+    - { name: "heat", enabled: "{{ enable_heat_horizon_policy_file }}" }
     - { name: "ironic", enabled: "{{ enable_horizon_ironic }}" }
-    - { name: "keystone", enabled: "{{ enable_keystone }}" }
-    - { name: "karbor", enabled: "{{ enable_horizon_karbor }}" }
+    - { name: "keystone", enabled: "{{ enable_keystone_horizon_policy_file }}" }
     - { name: "magnum", enabled: "{{ enable_horizon_magnum }}" }
     - { name: "manila", enabled: "{{ enable_horizon_manila }}" }
+    - { name: "masakari", enabled: "{{ enable_horizon_masakari }}" }
     - { name: "mistral", enabled: "{{ enable_horizon_mistral }}" }
-    - { name: "murano", enabled: "{{ enable_horizon_murano }}" }
-    - { name: "neutron", enabled: "{{ enable_neutron }}" }
-    - { name: "nova", enabled: "{{ enable_nova }}" }
-    - { name: "sahara", enabled: "{{ enable_horizon_sahara }}" }
-    - { name: "searchlight", enabled: "{{ enable_horizon_searchlight }}" }
-    - { name: "senlin", enabled: "{{ enable_horizon_senlin }}" }
-    - { name: "solum", enabled: "{{ enable_horizon_solum }}" }
+    - { name: "neutron", enabled: "{{ enable_neutron_horizon_policy_file }}" }
+    - { name: "nova", enabled: "{{ enable_nova_horizon_policy_file }}" }
+    - { name: "octavia", enabled: "{{ enable_horizon_octavia }}" }
     - { name: "tacker", enabled: "{{ enable_horizon_tacker }}" }
     - { name: "trove", enabled: "{{ enable_horizon_trove }}" }
     - { name: "watcher", enabled: "{{ enable_horizon_watcher }}" }
@@ -48,107 +41,84 @@
 - name: Copying over config.json files for services
   become: true
   vars:
-    horizon: "{{ horizon_services['horizon'] }}"
-  template:
+    service: "{{ horizon_services['horizon'] }}"
+  ansible.builtin.template:
     src: "horizon.json.j2"
     dest: "{{ node_config_directory }}/horizon/config.json"
     mode: "0660"
-  register: horizon_config_json
-  when:
-    - horizon.enabled | bool
-    - inventory_hostname in groups[horizon.group]
-  notify:
-    - Restart horizon container
+  when: service | service_enabled_and_mapped_to_host
 
-- name: Copying over horizon.conf
+- name: "Configure uWSGI for Horizon"
+  ansible.builtin.include_role:
+    name: service-uwsgi-config
+  vars:
+    project_services: "{{ horizon_services }}"
+    service: "{{ project_services[service_name] }}"
+    service_name: "horizon"
+    service_uwsgi_config_http_port: "{{ horizon_listen_port }}"
+    service_uwsgi_config_module: "{{ service.wsgi }}"
+    service_uwsgi_config_tls_backend: "{{ horizon_enable_tls_backend | bool }}"
+    service_uwsgi_config_tls_cert: "/etc/horizon/certs/horizon-cert.pem"
+    service_uwsgi_config_tls_key: "/etc/horizon/certs/horizon-key.pem"
+    service_uwsgi_config_uid: "{{ 'horizon' if enable_haproxy | bool else 'root' }}"
+    service_uwsgi_config_workers: "{{ horizon_wsgi_processes }}"
+    service_uwsgi_config_threads: "{{ horizon_wsgi_threads }}"
+  when:
+    - service | service_enabled_and_mapped_to_host
+
+- name: Copying over kolla-settings.py
   become: true
   vars:
-    horizon: "{{ horizon_services['horizon'] }}"
-  template:
+    service: "{{ horizon_services['horizon'] }}"
+  ansible.builtin.template:
     src: "{{ item }}"
-    dest: "{{ node_config_directory }}/horizon/horizon.conf"
+    dest: "{{ node_config_directory }}/horizon/_9998-kolla-settings.py"
     mode: "0660"
-  register: horizon_conf
   with_first_found:
-    - "{{ node_custom_config }}/horizon/{{ inventory_hostname }}/horizon.conf"
-    - "{{ node_custom_config }}/horizon/horizon.conf"
-    - "horizon.conf.j2"
-  when:
-    - horizon.enabled | bool
-    - inventory_hostname in groups[horizon.group]
-  notify:
-    - Restart horizon container
+    - "{{ node_custom_config }}/horizon/{{ inventory_hostname }}/_9998-kolla-settings.py"
+    - "{{ node_custom_config }}/horizon/_9998-kolla-settings.py"
+    - "_9998-kolla-settings.py.j2"
+  when: service | service_enabled_and_mapped_to_host
 
-- name: Copying over local_settings
+- name: Copying over custom-settings.py
   become: true
   vars:
-    horizon: "{{ horizon_services['horizon'] }}"
-  template:
+    service: "{{ horizon_services['horizon'] }}"
+  ansible.builtin.template:
     src: "{{ item }}"
-    dest: "{{ node_config_directory }}/horizon/local_settings"
+    dest: "{{ node_config_directory }}/horizon/_9999-custom-settings.py"
     mode: "0660"
   with_first_found:
-    - "{{ node_custom_config }}/horizon/{{ inventory_hostname }}/local_settings"
-    - "{{ node_custom_config }}/horizon/local_settings"
-    - "local_settings.j2"
-  register: horizon_local_settings
-  when:
-    - horizon.enabled | bool
-    - inventory_hostname in groups[horizon.group]
-  notify:
-    - Restart horizon container
-
-- name: Copying over custom_local_settings
-  become: true
-  vars:
-    horizon: "{{ horizon_services['horizon'] }}"
-  template:
-    src: "{{ item }}"
-    dest: "{{ node_config_directory }}/horizon/custom_local_settings"
-    mode: "0660"
-  with_first_found:
-    - "{{ node_custom_config }}/horizon/{{ inventory_hostname }}/custom_local_settings"
-    - "{{ node_custom_config }}/horizon/custom_local_settings"
-    - "custom_local_settings.j2"
-  register: horizon_custom_local_settings
-  when:
-    - horizon.enabled | bool
-    - inventory_hostname in groups[horizon.group]
-  notify:
-    - Restart horizon container
+    - "{{ node_custom_config }}/horizon/{{ inventory_hostname }}/_9999-custom-settings.py"
+    - "{{ node_custom_config }}/horizon/_9999-custom-settings.py"
+    - "_9999-custom-settings.py.j2"
+  when: service | service_enabled_and_mapped_to_host
 
 - name: Copying over existing policy file
   become: true
   vars:
-    horizon: "{{ horizon_services['horizon'] }}"
-  template:
+    service: "{{ horizon_services['horizon'] }}"
+  ansible.builtin.template:
     src: "{{ item }}"
     dest: "{{ node_config_directory }}/horizon/{{ item | basename }}"
     mode: "0660"
-  register: policy_jsons
-  when:
-    - horizon.enabled | bool
-    - inventory_hostname in groups[horizon.group]
+  when: service | service_enabled_and_mapped_to_host
   with_items: "{{ custom_policy }}"
-  notify:
-    - Restart horizon container
 
-- name: Check horizon container
-  vars:
-    horizon: "{{ horizon_services['horizon'] }}"
+- name: Copying over custom themes
   become: true
-  kolla_docker:
-    action: "compare_container"
-    common_options: "{{ docker_common_options }}"
-    name: "{{ horizon.container_name }}"
-    image: "{{ horizon.image }}"
-    environment: "{{ horizon.environment }}"
-    volumes: "{{ horizon.volumes }}"
-    dimensions: "{{ horizon.dimensions }}"
-  register: check_horizon_container
+  vars:
+    service: "{{ horizon_services['horizon'] }}"
+  ansible.builtin.copy:
+    src: "{{ node_custom_config }}/horizon/themes/{{ item.name }}"
+    dest: "{{ node_config_directory }}/horizon/themes/"
+    mode: "0660"
   when:
-    - kolla_action != "config"
-    - inventory_hostname in groups[horizon.group]
-    - horizon.enabled | bool
-  notify:
-    - Restart horizon container
+    - service | service_enabled_and_mapped_to_host
+    - horizon_custom_themes | length > 0
+  with_items: "{{ horizon_custom_themes }}"
+
+- name: Copying over TLS certificates
+  ansible.builtin.include_tasks: copy-certs.yml
+  when:
+    - horizon_copy_certs | bool

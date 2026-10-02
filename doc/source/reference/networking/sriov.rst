@@ -14,22 +14,31 @@ SRIOV requires specific NIC and BIOS configuration and is not supported on all
 platforms. Consult NIC and platform specific documentation for instructions
 on enablement.
 
-Modify the ``/etc/kolla/globals.yml`` file as the following example shows:
+Modify the ``/etc/kolla/globals.yml`` file as the following example
+shows which automatically appends ``sriovnicswitch`` to the
+``mechanism_drivers`` inside ``ml2_conf.ini``.
 
+.. path /etc/kolla/globals.yml
 .. code-block:: yaml
 
-   enable_neutron_sriov: "yes"
+   enable_neutron_sriov: true
 
-Modify the ``/etc/kolla/config/neutron/ml2_conf.ini`` file and add
-``sriovnicswitch`` to the ``mechanism_drivers``. Also, the provider
-networks used by SRIOV should be configured. Both flat and VLAN are configured
-with the same physical network name in this example:
+It is also a requirement to define physnet:interface mappings for all
+SRIOV devices as shown in the following example where ``sriovtenant1`` is the
+physnet mapped to ``ens785f0`` interface:
+
+.. path /etc/kolla/globals.yml
+.. code-block:: yaml
+
+   neutron_sriov_physnet_mappings:
+     sriovtenant1: ens785f0
+
+However, the provider networks using SRIOV should be configured.
+Both flat and VLAN are configured with the same physical network name
+in this example:
 
 .. path /etc/kolla/config/neutron/ml2_conf.ini
 .. code-block:: ini
-
-   [ml2]
-   mechanism_drivers = openvswitch,l2population,sriovnicswitch
 
    [ml2_type_vlan]
    network_vlan_ranges = sriovtenant1:1000:1009
@@ -37,41 +46,37 @@ with the same physical network name in this example:
    [ml2_type_flat]
    flat_networks = sriovtenant1
 
-Add ``PciPassthroughFilter`` to scheduler_default_filters
-
-The ``PciPassthroughFilter``, which is required by Nova Scheduler service
-on the Controller, should be added to ``scheduler_default_filters``
-
-Modify the ``/etc/kolla/config/nova.conf`` file and add
-``PciPassthroughFilter`` to ``scheduler_default_filters``. this filter is
-required by The Nova Scheduler service on the controller node.
+Modify the ``nova.conf`` file and add ``PciPassthroughFilter`` to
+``enabled_filters``. This filter is required by the Nova Scheduler
+service on the controller node.
 
 .. path /etc/kolla/config/nova.conf
 .. code-block:: ini
 
-   [DEFAULT]
-   scheduler_default_filters = <existing filters>, PciPassthroughFilter
-   scheduler_available_filters = nova.scheduler.filters.all_filters
+   [filter_scheduler]
+   enabled_filters = <existing filters>, PciPassthroughFilter
+   available_filters = nova.scheduler.filters.all_filters
 
-Edit the ``/etc/kolla/config/nova.conf`` file and add PCI device whitelisting.
-this is needed by OpenStack Compute service(s) on the Compute.
+PCI devices listed under ``neutron_sriov_physnet_mappings`` will be
+whitelisted on the Compute hosts inside ``nova.conf``.
 
-.. path /etc/kolla/config/nova.conf
-.. code-block:: ini
-
-   [pci]
-   passthrough_whitelist = [{"devname": "ens785f0", "physical_network": "sriovtenant1"}]
-
-Modify the ``/etc/kolla/config/neutron/sriov_agent.ini`` file. Add physical
-network to interface mapping. Specific VFs can also be excluded here. Leaving
-blank means to enable all VFs for the interface:
+Physical network to interface mappings in ``neutron_sriov_physnet_mappings``
+will be automatically added to ``sriov_agent.ini``. Specific VFs can be
+excluded via ``excluded_devices``. However, leaving blank (default) leaves all
+VFs enabled:
 
 .. path /etc/kolla/config/neutron/sriov_agent.ini
 .. code-block:: ini
 
    [sriov_nic]
-   physical_device_mappings = sriovtenant1:ens785f0
    exclude_devices =
+
+To use OpenvSwitch hardware offloading modify `/etc/kolla/globals.yml``:
+
+.. path /etc/kolla/globals.yml
+.. code-block:: yaml
+
+   openvswitch_hw_offload: "yes"
 
 Run deployment.
 
@@ -102,7 +107,7 @@ Verify the SRIOV Agent container is running on the compute node(s):
 
    # docker ps --filter name=neutron_sriov_agent
    CONTAINER ID   IMAGE                                                                COMMAND        CREATED         STATUS         PORTS  NAMES
-   b03a8f4c0b80   10.10.10.10:4000/registry/centos-source-neutron-sriov-agent:17.04.0  "kolla_start"  18 minutes ago  Up 18 minutes         neutron_sriov_agent
+   b03a8f4c0b80   10.10.10.10:4000/registry/neutron-sriov-agent:master-rocky-10        "kolla_start"  18 minutes ago  Up 18 minutes         neutron_sriov_agent
 
 Verify the SRIOV Agent service is present and UP:
 
@@ -165,7 +170,8 @@ dmesg on the compute node where the instance was placed.
    [ 2896.850028] ixgbe 0000:05:00.0: Setting VLAN 1000, QOS 0x0 on VF 3
    [ 2897.403367] vfio-pci 0000:05:10.4: enabling device (0000 -> 0002)
 
-For more information see `OpenStack SRIOV documentation <https://docs.openstack.org/neutron/pike/admin/config-sriov.html>`_.
+For more information see :neutron-doc:`OpenStack SRIOV documentation
+<admin/config-sriov.html>`.
 
 Nova SRIOV
 ~~~~~~~~~~
@@ -192,13 +198,13 @@ Compute service on the compute node also require the ``alias`` option under the
 .. path /etc/kolla/config/nova.conf
 .. code-block:: ini
 
-   [DEFAULT]
-   scheduler_default_filters = <existing filters>, PciPassthroughFilter
-   scheduler_available_filters = nova.scheduler.filters.all_filters
+   [filter_scheduler]
+   enabled_filters = <existing filters>, PciPassthroughFilter
+   available_filters = nova.scheduler.filters.all_filters
 
    [pci]
-   passthrough_whitelist = [{"vendor_id": "8086", "product_id": "10fb"}]
-   alias = [{"vendor_id":"8086", "product_id":"10ed", "device_type":"type-VF", "name":"vf1"}]
+   device_spec = [{"vendor_id": "8086", "product_id": "10fb"}]
+   alias = {"vendor_id":"8086", "product_id":"10ed", "device_type":"type-VF", "name":"vf1"}
 
 Run deployment.
 
@@ -221,4 +227,5 @@ Start a new instance using the flavor:
 Verify VF devices were created and the instance starts successfully as in
 the Neutron SRIOV case.
 
-For more information see `OpenStack PCI passthrough documentation <https://docs.openstack.org/nova/pike/admin/pci-passthrough.html>`_.
+For more information see :nova-doc:`OpenStack PCI passthrough documentation
+<admin/pci-passthrough.html>`.

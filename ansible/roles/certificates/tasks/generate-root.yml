@@ -1,0 +1,47 @@
+---
+- name: Ensuring ca directory exist
+  ansible.builtin.file:
+    path: "{{ kolla_certificates_dir }}/ca"
+    state: "directory"
+    mode: "0770"
+
+- name: Ensuring private root directory exist
+  ansible.builtin.file:
+    path: "{{ certificates_root_dir }}"
+    state: "directory"
+    mode: "0770"
+
+- name: Creating root certificate key
+  community.crypto.openssl_privatekey:
+    path: "{{ certificates_root_dir }}/root.key"
+    mode: "0660"
+    size: 4096
+    type: RSA
+
+- name: Create certificate signing request (CSR) for new certificate
+  community.crypto.openssl_csr:
+    path: "{{ certificates_root_dir }}/root.csr"
+    basic_constraints:
+      - 'CA:TRUE'
+    basic_constraints_critical: true
+    common_name: "KollaTestCA"
+    key_usage:
+      - digitalSignature
+      - keyCertSign
+    key_usage_critical: true
+    privatekey_path: "{{ certificates_root_dir }}/root.key"
+    use_common_name_for_san: false
+
+- name: Create self-signed CA certificate from CSR
+  community.crypto.x509_certificate:
+    path: "{{ certificates_root_dir }}/root.crt"
+    csr_path: "{{ certificates_root_dir }}/root.csr"
+    privatekey_path: "{{ certificates_root_dir }}/root.key"
+    provider: selfsigned
+    selfsigned_not_after: "+1024d"
+
+- name: Copy root certificate file to be included in container trusted ca-certificates
+  ansible.builtin.copy:
+    src: "{{ certificates_root_dir }}/root.crt"
+    dest: "{{ kolla_certificates_dir }}/ca/root.crt"
+    mode: "0660"

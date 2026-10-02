@@ -1,2 +1,6 @@
 ---
-- include_tasks: config.yml
+- name: Configure memcached
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check memcached containers
+  ansible.builtin.import_tasks: check-containers.yml

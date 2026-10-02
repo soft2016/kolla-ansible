@@ -1,21 +1,60 @@
 ---
-- name: Check nova upgrade status
+# Create new set of configs on nodes
+- name: Configure nova
+  ansible.builtin.import_tasks: config.yml
+
+- name: Run Nova upgrade checks
   become: true
-  command: docker exec -t nova_api nova-status upgrade check
+  vars:
+    nova_api: "{{ nova_services['nova-api'] }}"
+  kolla_container:
+    action: "start_container"
+    common_options: "{{ docker_common_options }}"
+    detach: false
+    environment:
+      KOLLA_UPGRADE_CHECK:
+      KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+    image: "{{ nova_api.image }}"
+    labels:
+      UPGRADE:
+    name: "nova_upgrade_checks"
+    restart_policy: oneshot
+    volumes: "{{ nova_api_default_volumes + nova_api_extra_volumes }}"
+  run_once: true
   register: nova_upgrade_check_stdout
-  when: inventory_hostname == groups['nova-api'][0]
+  delegate_to: "{{ groups['nova-api'][0] }}"
+  failed_when: false
+  check_mode: false
 
 - name: Upgrade status check result
-  fail:
+  ansible.builtin.fail:
     msg:
-      - "There was an upgrade status check warning or failure!"
+      - "There was an upgrade status check failure!"
       - "See the detail at https://docs.openstack.org/nova/latest/cli/nova-status.html#nova-status-checks"
   vars:
     first_nova_api_host: "{{ groups['nova-api'][0] }}"
-  when: hostvars[first_nova_api_host]['nova_upgrade_check_stdout']['rc'] != 0
+  when: hostvars[first_nova_api_host]['nova_upgrade_check_stdout']['rc'] not in [0, 1]
 
-- include_tasks: legacy_upgrade.yml
-  when: not nova_enable_rolling_upgrade | bool
+- name: Stopping top level nova services
+  become: true
+  kolla_container:
+    action: "stop_container"
+    common_options: "{{ docker_common_options }}"
+    name: "{{ item.value.container_name }}"
+  with_dict: "{{ nova_services | select_services_enabled_and_mapped_to_host }}"
+  when:
+    - nova_safety_upgrade | bool
 
-- include_tasks: rolling_upgrade.yml
-  when: nova_enable_rolling_upgrade | bool
+- name: Check nova containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+# TODO(donghm): Flush_handlers to restart nova services
+# should be run in serial nodes to decrease downtime if
+# the previous task did not run. Update when the
+# Ansible strategy module for rolling upgrade is finished.
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+# NOTE(dszumski): The Nova upgrade is not finished here and
+# continues in subsequent tasks.

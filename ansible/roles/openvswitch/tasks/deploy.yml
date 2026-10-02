@@ -1,7 +1,15 @@
 ---
-- include_tasks: config.yml
+- name: Import tasks from config-host.yml
+  ansible.builtin.import_tasks: config-host.yml
+
+- name: Configure openvswitch
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check openvswitch containers
+  ansible.builtin.import_tasks: check-containers.yml
 
 - name: Flush Handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers
 
-- include_tasks: ensure-ovs-bridge.yml
+- name: Import tasks from post-config.yml
+  ansible.builtin.import_tasks: post-config.yml

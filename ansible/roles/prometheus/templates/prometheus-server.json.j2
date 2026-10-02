@@ -1,30 +1,64 @@
 {
-    "command": "/opt/prometheus/prometheus -config.file /etc/prometheus/prometheus.yml -web.listen-address {{ api_interface_address }}:{{ prometheus_port }} -log.format logger:stdout -storage.local.path /var/lib/prometheus",
+    "command": "{{ prometheus_server_command }}",
     "config_files": [
         {
             "source": "{{ container_config_directory }}/prometheus.yml",
             "dest": "/etc/prometheus/prometheus.yml",
             "owner": "prometheus",
             "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/web.yml",
+            "dest": "/etc/prometheus/web.yml",
+            "owner": "prometheus",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/extras/*",
+            "dest": "/etc/prometheus/extras/",
+            "preserve_properties": true,
+            "optional": true
         }
-{% if enable_prometheus_alertmanager %}
-        ,{
+        {% if enable_prometheus_alertmanager | bool %},
+        {
             "source": "{{ container_config_directory }}/*.rules",
             "dest": "/etc/prometheus/",
             "optional": true,
             "owner": "prometheus",
             "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/prometheus",
+            "owner": "prometheus:kolla",
+            "perm": "2775"
         }
-{% endif %}
     ],
     "permissions": [
+        {
+            "path": "/var/log/kolla/prometheus/*.log",
+            "owner": "prometheus:kolla",
+            "perm": "0664"
+        },
         {
             "path": "/data",
             "owner": "prometheus:kolla",
             "recurse": true
         },
         {
-            "path": "/var/log/kolla/prometheus",
+            "path": "/etc/prometheus/extras",
             "owner": "prometheus:kolla",
             "recurse": true
         }

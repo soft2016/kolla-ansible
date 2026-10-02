@@ -1,0 +1,141 @@
+---
+ovn_db_services:
+  ovn-northd:
+    container_name: ovn_northd
+    group: ovn-northd
+    enabled: true
+    environment:
+      OVN_NB_DB: "{{ ovn_nb_connection }}"
+      OVN_SB_DB: "{{ ovn_sb_connection_no_relay }}"
+    image: "{{ ovn_northd_image_full }}"
+    volumes: "{{ ovn_northd_default_volumes + ovn_northd_extra_volumes }}"
+    dimensions: "{{ ovn_northd_dimensions }}"
+  ovn-nb-db:
+    container_name: ovn_nb_db
+    group: ovn-nb-db
+    enabled: true
+    environment:
+      OVN_NB_DB: "{{ ovn_nb_connection }}"
+    image: "{{ ovn_nb_db_image_full }}"
+    volumes: "{{ ovn_nb_db_default_volumes + ovn_nb_db_extra_volumes }}"
+    dimensions: "{{ ovn_nb_db_dimensions }}"
+  ovn-sb-db:
+    container_name: ovn_sb_db
+    group: ovn-sb-db
+    enabled: true
+    environment:
+      OVN_SB_DB: "{{ ovn_sb_connection_no_relay }}"
+    image: "{{ ovn_sb_db_image_full }}"
+    volumes: "{{ ovn_sb_db_default_volumes + ovn_sb_db_extra_volumes }}"
+    dimensions: "{{ ovn_sb_db_dimensions }}"
+  ovn-sb-db-relay:
+    container_name: ovn_sb_db_relay
+    group: ovn-sb-db-relay
+    enabled: "{{ enable_ovn_sb_db_relay | bool }}"
+    environment:
+      RELAY_ID: "{{ item | default(ovn_sb_db_relay_group_id | default('1')) | string }}"
+    image: "{{ ovn_sb_db_relay_image_full }}"
+    iterate: true
+    iterate_var: "{{ ovn_sb_db_relay_count | int }}"
+    volumes: "{{ ovn_sb_db_relay_default_volumes + ovn_sb_db_relay_extra_volumes }}"
+    dimensions: "{{ ovn_sb_db_relay_dimensions }}"
+
+
+####################
+# Docker
+####################
+ovn_tag: "{{ openstack_tag }}"
+
+ovn_northd_image: "{{ docker_image_url }}ovn-northd"
+ovn_northd_tag: "{{ ovn_tag }}"
+ovn_northd_image_full: "{{ ovn_northd_image }}:{{ ovn_northd_tag }}"
+
+ovn_nb_db_image: "{{ docker_image_url }}ovn-nb-db-server"
+ovn_nb_db_tag: "{{ ovn_tag }}"
+ovn_nb_db_image_full: "{{ ovn_nb_db_image }}:{{ ovn_nb_db_tag }}"
+
+ovn_sb_db_image: "{{ docker_image_url }}ovn-sb-db-server"
+ovn_sb_db_tag: "{{ ovn_tag }}"
+ovn_sb_db_image_full: "{{ ovn_sb_db_image }}:{{ ovn_sb_db_tag }}"
+
+ovn_sb_db_relay_image: "{{ docker_image_url }}ovn-sb-db-relay"
+ovn_sb_db_relay_tag: "{{ ovn_tag }}"
+ovn_sb_db_relay_image_full: "{{ ovn_sb_db_relay_image }}:{{ ovn_sb_db_relay_tag }}"
+
+ovn_northd_dimensions: "{{ default_container_dimensions }}"
+ovn_nb_db_dimensions: "{{ default_container_dimensions }}"
+ovn_sb_db_dimensions: "{{ default_container_dimensions }}"
+ovn_sb_db_relay_dimensions: "{{ default_container_dimensions }}"
+
+ovn_northd_default_volumes:
+  - "{{ node_config_directory }}/ovn-northd/:{{ container_config_directory }}/:ro"
+  - "/run/ovn:/run/ovn:shared"
+  - "kolla_logs:/var/log/kolla/"
+ovn_nb_db_default_volumes:
+  - "{{ node_config_directory }}/ovn-nb-db/:{{ container_config_directory }}/:ro"
+  - "ovn_nb_db:/var/lib/openvswitch/ovn-nb/"
+  - "/run/ovn:/run/ovn:shared"
+  - "kolla_logs:/var/log/kolla/"
+ovn_sb_db_default_volumes:
+  - "{{ node_config_directory }}/ovn-sb-db/:{{ container_config_directory }}/:ro"
+  - "ovn_sb_db:/var/lib/openvswitch/ovn-sb/"
+  - "/run/ovn:/run/ovn:shared"
+  - "kolla_logs:/var/log/kolla/"
+ovn_sb_db_relay_default_volumes:
+  - "{{ node_config_directory }}/ovn-sb-db-relay{{ ('-' + item | string) if item is defined }}/:{{ container_config_directory }}/:ro"
+  - "/run/ovn:/run/ovn:shared"
+  - "kolla_logs:/var/log/kolla/"
+
+ovn_db_extra_volumes: "{{ default_extra_volumes }}"
+ovn_northd_extra_volumes: "{{ ovn_db_extra_volumes }}"
+ovn_nb_db_extra_volumes: "{{ ovn_db_extra_volumes }}"
+ovn_sb_db_extra_volumes: "{{ ovn_db_extra_volumes }}"
+ovn_sb_db_relay_extra_volumes: "{{ ovn_db_extra_volumes }}"
+
+#####
+# OVN
+#####
+# Configure OVN remote probe interval time in ms
+ovn_remote_probe_interval: "60000"
+# Configure OVN openflow interval in s
+ovn_openflow_probe_interval: "60"
+# Configure OVN DB inactivity probe time in ms
+ovn_db_inactivity_probe: "60000"
+ovn_sb_db_inactivity_probe: "{{ ovn_db_inactivity_probe }}"
+ovn_nb_db_inactivity_probe: "{{ ovn_db_inactivity_probe }}"
+ovn_sb_db_relay_active_inactivity_probe: "{{ ovn_db_inactivity_probe | int * 2 }}"
+ovn_sb_db_relay_config_file_args: >-
+  --db-sb-relay-config-file=/etc/ovn/ovsdb-relay.json
+ovn_sb_db_relay_passive_inactivity_probe: "{{ ovn_db_inactivity_probe }}"
+ovn_sb_db_relay_max_backoff: "{{ ovn_db_inactivity_probe }}"
+
+# OVN startup commands
+ovn_nb_command: >-
+  /usr/share/ovn/scripts/ovn-ctl run_nb_ovsdb
+  --db-nb-cluster-local-addr={{ api_interface_address | put_address_in_context('url') }}
+  {{ ovn_nb_db_bootstrap_args | default('') }}
+  --db-nb-sock=/run/ovn/ovnnb_db.sock
+  --db-nb-pidfile=/run/ovn/ovnnb_db.pid
+  --db-nb-file=/var/lib/openvswitch/ovn-nb/ovnnb.db
+  --ovn-nb-logfile=/var/log/kolla/openvswitch/ovn-nb-db.log
+ovn_sb_command: >-
+  /usr/share/ovn/scripts/ovn-ctl run_sb_ovsdb
+  --db-sb-cluster-local-addr={{ api_interface_address | put_address_in_context('url') }}
+  {{ ovn_sb_db_bootstrap_args | default('') }}
+  --db-sb-sock=/run/ovn/ovnsb_db.sock
+  --db-sb-pidfile=/run/ovn/ovnsb_db.pid
+  --db-sb-file=/var/lib/openvswitch/ovn-sb/ovnsb.db
+  --ovn-sb-logfile=/var/log/kolla/openvswitch/ovn-sb-db.log
+ovn_sb_relay_command: >-
+  /usr/share/ovn/scripts/ovn-ctl run_sb_relay_ovsdb
+  --db-sb-relay-ctrl-sock=/run/ovn/ovnsb_db_relay_{{ ovn_sb_db_relay_group_id }}.ctl
+  --db-sb-relay-pidfile=/run/ovn/ovnsb_db_relay_{{ ovn_sb_db_relay_group_id }}.pid
+  --db-sb-relay-sock=/run/ovn/ovnsb_db_{{ ovn_sb_db_relay_group_id }}.sock
+  --db-sb-relay-use-remote-in-db=no
+  --ovn-sb-relay-logfile=/var/log/kolla/openvswitch/ovn-sb-relay-{{ ovn_sb_db_relay_group_id }}.log
+  {{ ovn_sb_db_relay_config_file_args }}
+# Workaround: pause after restarting containers to allow for leader election.
+ovn_leader_election_pause: 5
+
+# Extra command line arguments for ovn-northd
+ovn_northd_cmdline_extras: ""

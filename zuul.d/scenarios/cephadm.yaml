@@ -1,0 +1,84 @@
+---
+- job:
+    name: kolla-ansible-cephadm-base
+    parent: kolla-ansible-base
+    voting: false
+    files:
+      - ^ansible/group_vars/all/(ceph|ceph-rgw|cinder|common|fluentd|glance|heat|horizon|keepalived|keystone|loadbalancer|neutron|nova|nova-cell|openvswitch|placement|proxysql|rabbitmq|valkey).yml
+      - ^ansible/group_vars/baremetal/ansible-python-interpreter.yml
+      - ^ansible/roles/(ceph-rgw|certificates|cinder|fluentd|glance|haproxy-config|heat|horizon|keystone|kolla_toolbox|loadbalancer|loadbalancer-config|neutron|nova|nova-cell|openvswitch|placement|proxysql-config|rabbitmq|valkey)/
+      - ^roles/cephadm/
+      - ^tests/templates/inventory.j2
+    vars:
+      kolla_ansible_setup_disks_file_path: "/var/lib/ceph-osd.img"
+      kolla_ansible_setup_disks_vg_name: "cephvg"
+      kolla_ansible_setup_disks_lv_name: "cephlv"
+      kolla_ansible_tempest_exclude_regex:
+        - ^tempest.api.object_storage
+      scenario: cephadm
+      scenario_images_extra:
+        - ^cinder
+        - ^valkey
+
+- job:
+    name: kolla-ansible-debian-trixie-cephadm
+    parent: kolla-ansible-cephadm-base
+    nodeset: kolla-ansible-debian-trixie-multi-16GB
+    timeout: 10800
+    vars:
+      cephadm_use_package_from_distribution: true
+
+- job:
+    name: kolla-ansible-debian-trixie-cephadm-upgrade
+    parent: kolla-ansible-debian-trixie-cephadm
+    nodeset: kolla-ansible-debian-trixie-multi-16GB
+    timeout: 10800
+    vars:
+      cephadm_use_package_from_distribution: true
+
+- job:
+    name: kolla-ansible-rocky-10-cephadm
+    parent: kolla-ansible-cephadm-base
+    nodeset: kolla-ansible-rocky-10-multi-16GB
+    timeout: 10800
+    vars:
+      cephadm_use_package_from_distribution: true
+
+- job:
+    name: kolla-ansible-rocky-10-cephadm-upgrade
+    parent: kolla-ansible-rocky-10-cephadm
+    nodeset: kolla-ansible-rocky-10-multi-16GB
+    timeout: 10800
+
+- job:
+    name: kolla-ansible-ubuntu-noble-cephadm
+    parent: kolla-ansible-cephadm-base
+    nodeset: kolla-ansible-ubuntu-noble-multi-16GB
+    timeout: 10800
+    vars:
+      cephadm_use_package_from_distribution: true
+
+- job:
+    name: kolla-ansible-ubuntu-noble-cephadm-upgrade
+    parent: kolla-ansible-ubuntu-noble-cephadm
+    nodeset: kolla-ansible-ubuntu-noble-multi-16GB
+    timeout: 10800
+
+- job:
+    name: kolla-ansible-ubuntu-noble-cephadm-upgrade-slurp
+    parent: kolla-ansible-ubuntu-noble-cephadm-upgrade
+    nodeset: kolla-ansible-ubuntu-noble-multi-16GB
+    timeout: 10800
+
+- project-template:
+    name: kolla-ansible-scenario-cephadm
+    description: |
+      Runs Kolla-Ansible CephAdm scenario jobs.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie-cephadm
+        - kolla-ansible-debian-trixie-cephadm-upgrade
+        - kolla-ansible-rocky-10-cephadm
+        - kolla-ansible-rocky-10-cephadm-upgrade
+        - kolla-ansible-ubuntu-noble-cephadm
+        - kolla-ansible-ubuntu-noble-cephadm-upgrade

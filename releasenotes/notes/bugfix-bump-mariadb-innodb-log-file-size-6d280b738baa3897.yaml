@@ -1,0 +1,18 @@
+---
+features:
+  - |
+    Increased the default value of ``innodb_log_file_size`` from 96MB to 2GB.
+    This change improves overall MariaDB performance, though crash recovery
+    may take longer as a tradeoff. Users can adjust the value by overriding
+    the ``mariadb_innodb_log_file_size_mb`` variable. The allowed range is
+    4MB to 524288MB (512GB).
+upgrade:
+  - |
+    The default value of ``innodb_log_file_size`` has increased from 96MB to
+    2GB. This improves MariaDB performance but crash recovery may take longer.
+    Before upgrading, ensure sufficient disk space is available for the larger
+    InnoDB log file.
+fixes:
+  - |
+    Fixed an intermittent Zuul CI failure in the MariaDB backup test.
+    `LP#2129930 <https://launchpad.net/bugs/2129930>`__

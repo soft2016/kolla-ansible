@@ -17,7 +17,6 @@ to be enabled to operate correctly.
 
 * Core compute stack (nova, neutron, glance, etc)
 * Heat
-* Mistral + Redis
 * Barbican (Required only for multinode)
 
 Optionally tacker supports the following services and features.
@@ -27,24 +26,11 @@ Optionally tacker supports the following services and features.
 * Networking-sfc
 * Opendaylight
 
-Compatibility
-~~~~~~~~~~~~~
-
-Tacker is supported by the following distros and install_types.
-
-* Centos, Redhat and Oraclelinux.
-
-  * Source and binary images.
-
-* Debian and Ubuntu.
-
-  * Only source images.
-
 Preparation and Deployment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 By default tacker and required services are disabled in
-the ``group_vars/all.yml`` file.
+the ``group_vars/all/tacker.yml`` file.
 In order to enable them, you need to edit the file
 ``/etc/kolla/globals.yml`` and set the following variables:
 
@@ -54,10 +40,8 @@ In order to enable them, you need to edit the file
 
 .. code-block:: yaml
 
-   enable_tacker: "yes"
-   enable_barbican: "yes"
-   enable_mistral: "yes"
-   enable_redis: "yes"
+   enable_tacker: true
+   enable_barbican: true
 
 .. warning::
 
@@ -65,6 +49,13 @@ In order to enable them, you need to edit the file
    If not enabled, only one tacker-server host will have the keys on it
    and any request made to a different tacker-server will fail with a
    similar error as ``No such file or directory /etc/tacker/vim/fernet_keys``
+
+.. warning::
+
+   In Train, Tacker started using local filesystem to store VNF
+   packages and CSAR files.
+   Kolla Ansible provides no shared filesystem capabilities, hence only
+   one instance of each Tacker service is deployed and all on the same host.
 
 Deploy tacker and related services.
 
@@ -87,37 +78,30 @@ Source credentials file.
 
    $ . /etc/kolla/admin-openrc.sh
 
-Create base neutron networks and glance images.
-
-.. code-block:: console
-
-   $ ./tools/init-runonce
-
-.. note::
-
-   ``init-runonce`` file is located in ``$PYTHON_PATH/kolla-ansible``
-   folder in kolla-ansible installation from pip.
-
 In kolla-ansible git repository a `tacker demo <https://github.com/openstack/kolla-ansible/tree/master/contrib/demos/tacker>`_
 is present in ``kolla-ansible/contrib/demos/tacker/`` that will
 create a very basic VNF from a cirros image in ``demo-net`` network.
 
 Install python-tackerclient.
 
-.. note::
-
-   Barbican, heat and mistral python clients are in tacker's
-   requirements and will be installed as dependency.
-
 .. code-block:: console
 
    $ pip install python-tackerclient
 
-Execute ``deploy-tacker-demo`` script to initialize the VNF creation.
+.. warning::
+
+   You are free to use the following ``init-runonce`` script for demo
+   purposes but note it does **not** have to be run in order to use your
+   cloud. Depending on your customisations, it may not work, or it may
+   conflict with the resources you want to create. You have been warned.
+
+From kolla-ansible git repository, execute ``init-runonce`` and
+``deploy-tacker-demo`` scripts to initialize the demo VNF creation.
 
 .. code-block:: console
 
-   $ ./deploy-tacker-demo
+   $ ./tools/init-runonce
+   $ ./contrib/demos/tacker/deploy-tacker-demo
 
 Tacker demo script will create sample VNF Descriptor (VNFD) file,
 then register a default VIM, create a tacker VNFD and finally
@@ -170,3 +154,6 @@ can be cleaned up executing ``cleanup-tacker`` script.
 
    $ ./cleanup-tacker
 
+.. warning::
+
+   The above does not clean up resources created by ``init-runonce``.

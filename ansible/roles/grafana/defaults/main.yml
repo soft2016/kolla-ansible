@@ -1,69 +1,139 @@
 ---
-project_name: "grafana"
-
 grafana_services:
   grafana:
     container_name: grafana
     group: grafana
     enabled: true
     image: "{{ grafana_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/grafana/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "grafana:/var/lib/grafana/"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ grafana_default_volumes + grafana_extra_volumes }}"
     dimensions: "{{ grafana_dimensions }}"
+    healthcheck: "{{ grafana_healthcheck }}"
+    environment: "{{ grafana_container_proxy }}"
     haproxy:
       grafana_server:
         enabled: "{{ enable_grafana }}"
         mode: "http"
         external: false
         port: "{{ grafana_server_port }}"
+        listen_port: "{{ grafana_server_listen_port }}"
+        backend_http_extra:
+          - "option httpchk GET /api/health"
+          - "http-check expect status 200"
       grafana_server_external:
-        enabled: "{{ enable_grafana }}"
+        enabled: "{{ enable_grafana_external | bool }}"
         mode: "http"
         external: true
-        port: "{{ grafana_server_port }}"
+        external_fqdn: "{{ grafana_external_fqdn }}"
+        port: "{{ grafana_server_public_port }}"
+        listen_port: "{{ grafana_server_listen_port }}"
+        backend_http_extra:
+          - "option httpchk GET /api/health"
+          - "http-check expect status 200"
 
 ####################
 # Database
 ####################
 grafana_database_name: "grafana"
 grafana_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}grafana{% endif %}"
-grafana_database_address: "{{ database_address }}:{{ database_port }}"
+grafana_database_address: "{{ database_address | put_address_in_context('url') }}:{{ database_port }}"
+
+####################
+# Database sharding
+####################
+grafana_database_shard_root_user: "{% if enable_proxysql | bool %}root_shard_{{ grafana_database_shard_id }}{% else %}{{ database_user }}{% endif %}"
+grafana_database_shard_id: "{{ mariadb_default_database_shard_id | int }}"
+grafana_database_shard:
+  users:
+    - user: "{{ grafana_database_user }}"
+      password: "{{ grafana_database_password }}"
+      shard_id: "{{ grafana_database_shard_id }}"
+  rules:
+    - schema: "{{ grafana_database_name }}"
+      shard_id: "{{ grafana_database_shard_id }}"
+    - user: "{{ grafana_database_user }}"
+      shard_id: "{{ grafana_database_shard_id }}"
 
 ####################
 # Datasource
 ####################
 grafana_data_sources:
-  influxdb:
-    enabled: "{{ enable_influxdb | bool }}"
+  opensearch:
+    enabled: "{{ enable_opensearch | bool }}"
     data:
-      isDefault: yes
-      database: "telegraf"
-      name: "telegraf"
-      type: "influxdb"
-      url: "{{ internal_protocol }}://{{ kolla_internal_vip_address }}:{{ influxdb_http_port }}"
+      name: "opensearch"
+      type: "grafana-opensearch-datasource"
       access: "proxy"
-      basicAuth: false
-  elasticsearch:
-    enabled: "{{ enable_elasticsearch | bool }}"
-    data:
-      name: "elasticsearch"
-      type: "elasticsearch"
-      access: "proxy"
-      url: "{{ internal_protocol }}://{{ kolla_internal_vip_address }}:{{ elasticsearch_port }}"
-      database: "flog-*"
+      url: "{{ opensearch_internal_endpoint }}"
       jsonData:
-        esVersion: 5
+        flavor: "OpenSearch"
+        database: "{{ opensearch_log_index_prefix }}-*"
+        version: "2.11.1"
         timeField: "@timestamp"
+        logLevelField: "log_level"
+  alertmanager:
+    enabled: "{{ enable_prometheus_alertmanager | bool }}"
+    data:
+      name: "Alertmanager"
+      type: "alertmanager"
+      access: "proxy"
+      url: "{{ prometheus_alertmanager_internal_endpoint }}"
+      jsonData:
+        implementation: "prometheus"
+        alertmanager: true
+        timeInterval: "30s"
+      basicAuth: true
+      basicAuthUser: "{{ prometheus_alertmanager_user }}"
+      secureJsonData:
+        basicAuthPassword: "{{ prometheus_alertmanager_password }}"
 
 ##########
 # Grafana
 ##########
-grafana_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-grafana"
-grafana_tag: "{{ openstack_release }}"
+grafana_image: "{{ docker_image_url }}grafana"
+grafana_tag: "{{ openstack_tag }}"
 grafana_image_full: "{{ grafana_image }}:{{ grafana_tag }}"
 grafana_admin_username: "admin"
 
+grafana_enable_healthchecks: "{{ enable_container_healthchecks }}"
+grafana_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+grafana_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+grafana_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+grafana_healthcheck_test:
+  - "CMD-SHELL"
+  - >-
+    healthcheck_curl http://{{
+    api_interface_address | put_address_in_context('url') }}:{{ grafana_server_port }}/api/health
+grafana_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+grafana_healthcheck:
+  interval: "{{ grafana_healthcheck_interval }}"
+  retries: "{{ grafana_healthcheck_retries }}"
+  start_period: "{{ grafana_healthcheck_start_period }}"
+  test: "{% if grafana_enable_healthchecks | bool %}{{ grafana_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ grafana_healthcheck_timeout }}"
+
 grafana_dimensions: "{{ default_container_dimensions }}"
+grafana_default_volumes:
+  - "{{ node_config_directory }}/grafana/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+grafana_extra_volumes: "{{ default_extra_volumes }}"
+grafana_container_proxy: "{{ container_proxy }}"
+
+grafana_start_first_node_delay: 10
+grafana_start_first_node_retries: 12
+
+grafana_remove_old_volume: true
+
+grafana_custom_home_dashboard: >-
+  {{ 'grafana_home_dashboard.json' in
+     check_extra_conf_grafana.files | default([], true) |
+     map(attribute='path') | map('basename') }}
+
+############
+# Prometheus
+############
+grafana_prometheus_url: "{{ internal_protocol }}://{{ kolla_internal_fqdn | put_address_in_context('url') }}:{{ prometheus_port }}"
+
+###################
+# Copy certificates
+###################
+grafana_copy_certs: "{{ kolla_copy_ca_into_containers | bool }}"

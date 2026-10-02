@@ -1,0 +1,21 @@
+---
+- name: Import tasks from config-host.yml
+  ansible.builtin.import_tasks: config-host.yml
+
+- name: Configure opensearch
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check opensearch containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Include tasks from register.yml
+  ansible.builtin.include_tasks: register.yml
+  when:
+    - opensearch_enable_keystone_registration | bool
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Include tasks from post-config.yml
+  ansible.builtin.include_tasks: post-config.yml
+  when: opensearch_apply_log_retention_policy | bool

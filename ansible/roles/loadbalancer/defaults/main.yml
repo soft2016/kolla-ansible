@@ -1,0 +1,236 @@
+---
+loadbalancer_services:
+  haproxy:
+    container_name: haproxy
+    group: loadbalancer
+    enabled: true
+    image: "{{ haproxy_image_full }}"
+    privileged: true
+    volumes: "{{ haproxy_default_volumes + haproxy_extra_volumes }}"
+    dimensions: "{{ haproxy_dimensions }}"
+    healthcheck: "{{ haproxy_healthcheck }}"
+  proxysql:
+    container_name: proxysql
+    group: loadbalancer
+    enabled: "{{ enable_proxysql | bool }}"
+    image: "{{ proxysql_image_full }}"
+    privileged: false
+    volumes: "{{ proxysql_default_volumes + proxysql_extra_volumes }}"
+    dimensions: "{{ proxysql_dimensions }}"
+    healthcheck: "{{ proxysql_healthcheck }}"
+  keepalived:
+    container_name: keepalived
+    group: loadbalancer
+    enabled: "{{ enable_keepalived | bool }}"
+    image: "{{ keepalived_image_full }}"
+    privileged: true
+    volumes: "{{ keepalived_default_volumes + keepalived_extra_volumes }}"
+    dimensions: "{{ keepalived_dimensions }}"
+  haproxy-ssh:
+    container_name: "haproxy_ssh"
+    group: loadbalancer
+    enabled: "{{ enable_letsencrypt | bool }}"
+    image: "{{ haproxy_ssh_image_full }}"
+    volumes: "{{ haproxy_ssh_default_volumes }}"
+    dimensions: "{{ haproxy_ssh_dimensions }}"
+    healthcheck: "{{ haproxy_ssh_healthcheck }}"
+
+
+####################
+# Docker
+####################
+keepalived_image: "{{ docker_image_url }}keepalived"
+keepalived_tag: "{{ openstack_tag }}"
+keepalived_image_full: "{{ keepalived_image }}:{{ keepalived_tag }}"
+
+haproxy_image: "{{ docker_image_url }}haproxy"
+haproxy_tag: "{{ openstack_tag }}"
+haproxy_image_full: "{{ haproxy_image }}:{{ haproxy_tag }}"
+
+proxysql_image: "{{ docker_image_url }}proxysql"
+proxysql_tag: "{{ openstack_tag }}"
+proxysql_image_full: "{{ proxysql_image }}:{{ proxysql_tag }}"
+
+haproxy_ssh_image: "{{ docker_image_url }}haproxy-ssh"
+haproxy_ssh_tag: "{{ haproxy_tag }}"
+haproxy_ssh_image_full: "{{ haproxy_ssh_image }}:{{ haproxy_ssh_tag }}"
+
+syslog_server: "{{ api_interface_address }}"
+syslog_haproxy_facility: "local1"
+
+# Traffic mode. Valid options are [ multicast, unicast ]
+keepalived_traffic_mode: "multicast"
+
+# Extended global configuration, optimization options.
+haproxy_max_connections: 40000
+haproxy_threads: 1
+haproxy_thread_cpu_map: "no"
+# Matches the mariadb 10000 max connections limit
+haproxy_defaults_max_connections: 10000
+
+haproxy_dimensions: "{{ default_container_dimensions }}"
+proxysql_dimensions: "{{ default_container_dimensions }}"
+keepalived_dimensions: "{{ default_container_dimensions }}"
+haproxy_ssh_dimensions: "{{ default_container_dimensions }}"
+
+haproxy_enable_healthchecks: "{{ enable_container_healthchecks }}"
+haproxy_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+haproxy_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+haproxy_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+haproxy_healthcheck_test: ["CMD-SHELL", "healthcheck_curl http://{{ api_interface_address | put_address_in_context('url') }}:{{ haproxy_monitor_port }}"]
+haproxy_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+haproxy_healthcheck:
+  interval: "{{ haproxy_healthcheck_interval }}"
+  retries: "{{ haproxy_healthcheck_retries }}"
+  start_period: "{{ haproxy_healthcheck_start_period }}"
+  test: "{% if haproxy_enable_healthchecks | bool %}{{ haproxy_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ haproxy_healthcheck_timeout }}"
+
+proxysql_enable_healthchecks: "{{ enable_container_healthchecks }}"
+proxysql_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+proxysql_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+proxysql_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+proxysql_healthcheck_test: ["CMD-SHELL", "healthcheck_listen proxysql {{ proxysql_admin_port }}"]
+proxysql_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+proxysql_healthcheck:
+  interval: "{{ proxysql_healthcheck_interval }}"
+  retries: "{{ proxysql_healthcheck_retries }}"
+  start_period: "{{ proxysql_healthcheck_start_period }}"
+  test: "{% if proxysql_enable_healthchecks | bool %}{{ proxysql_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ proxysql_healthcheck_timeout }}"
+
+haproxy_ssh_enable_healthchecks: "{{ enable_container_healthchecks }}"
+haproxy_ssh_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+haproxy_ssh_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+haproxy_ssh_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+haproxy_ssh_healthcheck_test: ["CMD-SHELL", "healthcheck_listen sshd {{ haproxy_ssh_port }}"]
+haproxy_ssh_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+haproxy_ssh_healthcheck:
+  interval: "{{ haproxy_ssh_healthcheck_interval }}"
+  retries: "{{ haproxy_ssh_healthcheck_retries }}"
+  start_period: "{{ haproxy_ssh_healthcheck_start_period }}"
+  test: "{% if haproxy_ssh_enable_healthchecks | bool %}{{ haproxy_ssh_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ haproxy_ssh_healthcheck_timeout }}"
+
+
+haproxy_default_volumes:
+  - "{{ node_config_directory }}/haproxy/:{{ container_config_directory }}/:ro"
+  - "haproxy_socket:/var/lib/kolla/haproxy/"
+  - "letsencrypt_certificates:/etc/haproxy/certificates"
+
+proxysql_default_volumes:
+  - "{{ node_config_directory }}/proxysql/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "proxysql:/var/lib/proxysql/"
+  - "proxysql_socket:/var/lib/kolla/proxysql/"
+keepalived_default_volumes:
+  - "{{ node_config_directory }}/keepalived/:{{ container_config_directory }}/:ro"
+  - "/lib/modules:/lib/modules:ro"
+  - "{{ 'haproxy_socket:/var/lib/kolla/haproxy/' if enable_haproxy | bool else '' }}"
+  - "{{ 'proxysql_socket:/var/lib/kolla/proxysql/' if enable_proxysql | bool else '' }}"
+haproxy_ssh_default_volumes:
+  - "{{ node_config_directory }}/haproxy-ssh/:{{ container_config_directory }}/:ro"
+  - "haproxy_socket:/var/lib/kolla/haproxy/"
+  - "{{ 'letsencrypt:/etc/letsencrypt' if enable_letsencrypt | bool else omit }}"
+  - "{{ 'letsencrypt_certificates:/etc/haproxy/certificates' if enable_letsencrypt | bool else omit }}"
+
+haproxy_extra_volumes: "{{ default_extra_volumes }}"
+proxysql_extra_volumes: "{{ default_extra_volumes }}"
+keepalived_extra_volumes: "{{ default_extra_volumes }}"
+
+# Default proxysql values
+proxysql_workers: "{{ openstack_service_workers }}"
+
+# The maximum number of client connections that the proxy can handle.
+# After this number is reached, new connections will be rejected with
+# the #HY000 error, and the error message Too many connections.
+#
+# As proxysql can route queries to several mariadb clusters, this
+# value is set to 4x {{ proxysql_backend_max_connections }}
+proxysql_max_connections: 40000
+# The maximum number of connections to mariadb backends.
+proxysql_backend_max_connections: 10000
+proxysql_backend_max_replication_lag: "0"
+proxysql_admin_user: "kolla-admin"
+proxysql_stats_user: "kolla-stats"
+
+# Proxysql prometheus exporter
+proxysql_prometheus_exporter_memory_metrics_interval: "60"
+
+# Default timeout values
+haproxy_http_request_timeout: "10s"
+haproxy_http_keep_alive_timeout: "10s"
+haproxy_queue_timeout: "1m"
+haproxy_connect_timeout: "10s"
+haproxy_client_timeout: "1m"
+haproxy_server_timeout: "1m"
+haproxy_check_timeout: "10s"
+
+# Check http://www.haproxy.org/download/1.5/doc/configuration.txt for available options
+haproxy_defaults_balance: "roundrobin"
+
+# Avoid TCP connections refusing to die after VIP switch
+# https://bugs.launchpad.net/kolla-ansible/+bug/1917068
+haproxy_host_ipv4_tcp_retries2: "KOLLA_UNSET"
+
+# HAProxy socket admin permissions enable
+haproxy_socket_level_admin: "{{ enable_letsencrypt | bool }}"
+kolla_externally_managed_cert: false
+
+# Allow to disable keepalived tracking script (e.g. for single node environments
+# where this proves problematic in some cases)
+keepalived_track_script_enabled: true
+
+# Default backend for single external frontend (for missing mappings)
+haproxy_external_single_frontend_default_backend: "horizon_external_back"
+
+haproxy_single_external_frontend_public_port: "443"
+
+haproxy_external_single_frontend_options:
+  - option httplog
+  - option forwardfor
+  - "timeout client {{ haproxy_glance_api_client_timeout }}"
+
+haproxy_glance_api_client_timeout: "6h"
+loadbalancer_copy_certs: >-
+  {{
+    kolla_copy_ca_into_containers | bool
+    or kolla_enable_tls_external | bool
+    or kolla_enable_tls_internal | bool
+    or kolla_enable_tls_backend | bool
+    or database_enable_tls_internal | bool
+    or database_enable_tls_backend | bool
+  }}
+
+################
+# ProxySQL
+################
+mariadb_connect_timeout_client: ""
+mariadb_connect_timeout_server: ""
+mariadb_connect_timeout_server_max: ""
+# ProxySQL default is two minutes, which is most probably too much.
+mariadb_monitor_connect_interval: "2000"
+mariadb_monitor_connect_timeout: ""
+mariadb_monitor_galera_healthcheck_interval: ""
+mariadb_monitor_galera_healthcheck_timeout: ""
+mariadb_monitor_galera_healthcheck_max_timeout_count: ""
+mariadb_monitor_ping_interval: ""
+mariadb_monitor_ping_timeout: ""
+mariadb_monitor_ping_max_failures: ""
+mariadb_monitor_read_only_interval: ""
+mariadb_verbose_query_error: "{{ openstack_logging_debug }}"
+#
+# Defaults preserved for multinode setup
+# Tweaked for single-node
+#
+# ProxySQL shuns servers on MySQL errors, which can cause failures
+# during upgrades or restarts. In single-node setups, ProxySQL can't reroute
+# traffic, leading to "Max connect timeout" errors. To avoid this in CI and
+# signle-node environments, delay error responses to clients by 10 seconds,
+# giving the backend time to recover without immediate failures.
+#
+# See ProxySQL docs for more: https://proxysql.com/documentation/global-variables/mysql-variables/#mysql-shun_on_failures
+mariadb_singlenode: "{{ mariadb_shards_info.shards.values() | map(attribute='hosts') | map('length') | select('<=', 1) | list | length > 0 }}"
+mariadb_shun_on_failures: "{{ '10' if mariadb_singlenode else '' }}"
+mariadb_connect_retries_delay: "{{ '1000' if mariadb_singlenode else '' }}"
+mariadb_connect_retries_on_failure: "{{ '20' if mariadb_singlenode else '' }}"

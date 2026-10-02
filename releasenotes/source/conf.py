@@ -32,6 +32,12 @@ extensions = [
     'reno.sphinxext',
 ]
 
+# openstackdocstheme options
+openstackdocs_repo_name = 'openstack/kolla-ansible'
+openstackdocs_bug_project = 'kolla-ansible'
+openstackdocs_bug_tag = ''
+openstackdocs_auto_name = False
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
@@ -45,8 +51,8 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'Kolla Release Notes'
-copyright = u'2015, Kolla developers'
+project = 'Kolla Ansible Release Notes'
+copyright = '2015-2021, Kolla Ansible developers'
 
 # Release notes do not need a version number in the title, they
 # cover multiple releases.
@@ -85,7 +91,7 @@ exclude_patterns = []
 # show_authors = False
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'sphinx'
+pygments_style = 'native'
 
 # A list of ignored prefixes for module index sorting.
 # modindex_common_prefix = []
@@ -134,10 +140,6 @@ html_static_path = ['_static']
 # directly to the root of the documentation.
 # html_extra_path = []
 
-# If not '', a 'Last updated on:' timestamp is inserted at every page bottom,
-# using the given strftime format.
-html_last_updated_fmt = '%Y-%m-%d %H:%M'
-
 # If true, SmartyPants will be used to convert quotes and dashes to
 # typographically correct entities.
 # html_use_smartypants = True
@@ -176,7 +178,7 @@ html_last_updated_fmt = '%Y-%m-%d %H:%M'
 # html_file_suffix = None
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'KollaReleaseNotesdoc'
+htmlhelp_basename = 'KollaAnsibleReleaseNotesdoc'
 
 
 # -- Options for LaTeX output ---------------------------------------------
@@ -185,8 +187,9 @@ htmlhelp_basename = 'KollaReleaseNotesdoc'
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    ('index', 'KollaReleaseNotes.tex', u'Kolla Release Notes Documentation',
-     u'Kolla developers', 'manual'),
+    ('index', 'KollaAnsibleReleaseNotes.tex',
+     'Kolla Ansible Release Notes Documentation',
+     'Kolla Ansible developers', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -210,28 +213,17 @@ latex_documents = [
 # latex_domain_indices = True
 
 
-# -- Options for manual page output ---------------------------------------
-
-# One entry per manual page. List of tuples
-# (source start file, name, description, authors, manual section).
-man_pages = [
-    ('index', 'kollareleasenotes', u'Kolla Release Notes Documentation',
-     [u'Kolla developers'], 1)
-]
-
-# If true, show URL addresses after external links.
-# man_show_urls = False
-
-
 # -- Options for Texinfo output -------------------------------------------
 
 # Grouping the document tree into Texinfo files. List of tuples
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    ('index', 'KollaReleaseNotes', u'Kolla Release Notes Documentation',
-     u'Kolla developers', 'KollaReleaseNotes',
-     'One line description of project.', 'Miscellaneous'),
+    ('index', 'KollaAnsibleReleaseNotes',
+     'Kolla Ansible Release Notes Documentation',
+     'Kolla Ansible developers', 'KollaAnsibleReleaseNotes',
+     'Kolla-Ansible deploys OpenStack services and infrastructure components '
+     'in Docker containers.', 'Miscellaneous'),
 ]
 
 # Documents to append as an appendix to all manuals.

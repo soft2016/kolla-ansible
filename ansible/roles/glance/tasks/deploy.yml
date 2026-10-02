@@ -1,21 +1,20 @@
 ---
-- include_tasks: register.yml
-  when: inventory_hostname in groups['glance-api']
+- name: Register glance in Keystone
+  ansible.builtin.import_tasks: register.yml
 
-- include_tasks: config.yml
+- name: Configure glance
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: clone.yml
+- name: Check glance containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone glance repository
+  ansible.builtin.include_tasks: clone.yml
   when:
     - glance_dev_mode | bool
-    - inventory_hostname in groups['glance-api'] or
-      inventory_hostname in groups['glance-registry']
 
-- include_tasks: bootstrap.yml
-  when: inventory_hostname in groups['glance-api']
+- name: Bootstrap glance service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
-
-- include_tasks: check.yml
-  when: inventory_hostname in groups['glance-api'] or
-        inventory_hostname in groups['glance-registry']
+  ansible.builtin.meta: flush_handlers

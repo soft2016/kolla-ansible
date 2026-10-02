@@ -1,153 +1,536 @@
 ---
-project_name: "prometheus"
-
 prometheus_services:
   prometheus-server:
     container_name: prometheus_server
     group: prometheus
-    enabled: true
+    enabled: "{{ enable_prometheus_server | bool }}"
     image: "{{ prometheus_server_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/prometheus-server/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "prometheus:/var/lib/prometheus"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ prometheus_server_default_volumes + prometheus_server_extra_volumes }}"
     dimensions: "{{ prometheus_server_dimensions }}"
     haproxy:
       prometheus_server:
-        enabled: "{{ enable_prometheus }}"
+        enabled: "{{ enable_prometheus_server | bool }}"
         mode: "http"
         external: false
         port: "{{ prometheus_port }}"
-  prometheus-node-exporter:
-    container_name: prometheus_node_exporter
-    group: prometheus-node-exporter
-    enabled: "{{ enable_prometheus_node_exporter | bool }}"
-    image: "{{ prometheus_node_exporter_image_full }}"
-    pid_mode: "host"
-    volumes:
-      - "{{ node_config_directory }}/prometheus-node-exporter/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "/proc:/host/proc:ro"
-      - "/sys:/host/sys:ro"
-    dimensions: "{{ prometheus_node_exporter_dimensions }}"
+        active_passive: "{{ prometheus_active_passive | bool }}"
+        backend_http_extra:
+          - "option httpchk GET /-/ready HTTP/1.0"
+          - "http-check send hdr Authorization 'Basic {{ (prometheus_haproxy_user + ':' + prometheus_haproxy_password) | b64encode }}'"
+      prometheus_server_external:
+        enabled: "{{ enable_prometheus_server_external | bool }}"
+        mode: "http"
+        external: true
+        external_fqdn: "{{ prometheus_external_fqdn }}"
+        port: "{{ prometheus_public_port }}"
+        listen_port: "{{ prometheus_listen_port }}"
+        active_passive: "{{ prometheus_active_passive | bool }}"
+        backend_http_extra:
+          - "option httpchk GET /-/ready HTTP/1.0"
+          - "http-check send hdr Authorization 'Basic {{ (prometheus_haproxy_user + ':' + prometheus_haproxy_password) | b64encode }}'"
   prometheus-mysqld-exporter:
     container_name: prometheus_mysqld_exporter
     group: prometheus-mysqld-exporter
     enabled: "{{ enable_prometheus_mysqld_exporter | bool }}"
     image: "{{ prometheus_mysqld_exporter_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/prometheus-mysqld-exporter/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ prometheus_mysqld_exporter_default_volumes + prometheus_mysqld_exporter_extra_volumes }}"
     dimensions: "{{ prometheus_mysqld_exporter_dimensions }}"
-  prometheus-haproxy-exporter:
-    container_name: prometheus_haproxy_exporter
-    group: prometheus-haproxy-exporter
-    enabled: "{{ enable_prometheus_haproxy_exporter | bool }}"
-    image: "{{ prometheus_haproxy_exporter_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/prometheus-haproxy-exporter/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "haproxy_socket:/var/lib/kolla/haproxy"
-    dimensions: "{{ prometheus_haproxy_exporter_dimensions }}"
   prometheus-memcached-exporter:
     container_name: prometheus_memcached_exporter
     group: prometheus-memcached-exporter
     enabled: "{{ enable_prometheus_memcached_exporter | bool }}"
     image: "{{ prometheus_memcached_exporter_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/prometheus-memcached-exporter/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ prometheus_memcached_exporter_default_volumes + prometheus_memcached_exporter_extra_volumes }}"
     dimensions: "{{ prometheus_memcached_exporter_dimensions }}"
-  prometheus-cadvisor:
-    container_name: "prometheus_cadvisor"
-    group: "prometheus-cadvisor"
-    enabled: "{{ enable_prometheus_cadvisor | bool }}"
-    image: "{{ prometheus_cadvisor_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/prometheus-cadvisor/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "/:/rootfs:ro"
-      - "/var/run:/var/run:rw"
-      - "/sys:/sys:ro"
-      - "/var/lib/docker/:/var/lib/docker:ro"
-      - "/dev/disk/:/dev/disk:ro"
-    dimensions: "{{ prometheus_cadvisor_dimensions }}"
   prometheus-alertmanager:
     container_name: "prometheus_alertmanager"
     group: "prometheus-alertmanager"
     enabled: "{{ enable_prometheus_alertmanager | bool }}"
     image: "{{ prometheus_alertmanager_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/prometheus-alertmanager/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "prometheus:/var/lib/prometheus"
+    volumes: "{{ prometheus_alertmanager_default_volumes + prometheus_alertmanager_extra_volumes }}"
     dimensions: "{{ prometheus_alertmanager_dimensions }}"
+    healthcheck: "{{ prometheus_alertmanager_healthcheck }}"
     haproxy:
       prometheus_alertmanager:
-        enabled: "{{ enable_prometheus_alertmanager }}"
+        enabled: "{{ enable_prometheus_alertmanager | bool }}"
         mode: "http"
         external: false
         port: "{{ prometheus_alertmanager_port }}"
         auth_user: "{{ prometheus_alertmanager_user }}"
         auth_pass: "{{ prometheus_alertmanager_password }}"
+        active_passive: "{{ prometheus_alertmanager_active_passive | bool }}"
+        backend_http_extra:
+          - "option httpchk GET /-/healthy"
+          - "http-check expect status 200"
       prometheus_alertmanager_external:
-        enabled: "{{ enable_prometheus_alertmanager }}"
+        enabled: "{{ enable_prometheus_alertmanager_external | bool }}"
         mode: "http"
         external: true
-        port: "{{ prometheus_alertmanager_port }}"
+        external_fqdn: "{{ prometheus_alertmanager_external_fqdn }}"
+        port: "{{ prometheus_alertmanager_public_port }}"
+        listen_port: "{{ prometheus_alertmanager_listen_port }}"
         auth_user: "{{ prometheus_alertmanager_user }}"
         auth_pass: "{{ prometheus_alertmanager_password }}"
+        active_passive: "{{ prometheus_alertmanager_active_passive | bool }}"
+        backend_http_extra:
+          - "option httpchk GET /-/healthy"
+          - "http-check expect status 200"
+  prometheus-openstack-exporter:
+    container_name: "prometheus_openstack_exporter"
+    group: "prometheus-openstack-exporter"
+    enabled: "{{ enable_prometheus_openstack_exporter | bool }}"
+    environment:
+      OS_COMPUTE_API_VERSION: "{{ prometheus_openstack_exporter_compute_api_version }}"
+    image: "{{ prometheus_openstack_exporter_image_full }}"
+    volumes: "{{ prometheus_openstack_exporter_default_volumes + prometheus_openstack_exporter_extra_volumes }}"
+    dimensions: "{{ prometheus_openstack_exporter_dimensions }}"
+    haproxy:
+      prometheus_openstack_exporter:
+        enabled: "{{ enable_prometheus_openstack_exporter | bool }}"
+        mode: "http"
+        external: false
+        port: "{{ prometheus_openstack_exporter_port }}"
+        backend_http_extra:
+          - "option httpchk"
+          - "timeout server {{ prometheus_openstack_exporter_timeout }}"
+      prometheus_openstack_exporter_external:
+        enabled: "{{ enable_prometheus_openstack_exporter_external | bool }}"
+        mode: "http"
+        external: true
+        port: "{{ prometheus_openstack_exporter_port }}"
+        backend_http_extra:
+          - "option httpchk"
+          - "timeout server {{ prometheus_openstack_exporter_timeout }}"
+  prometheus-elasticsearch-exporter:
+    container_name: prometheus_elasticsearch_exporter
+    group: prometheus-elasticsearch-exporter
+    enabled: "{{ enable_prometheus_elasticsearch_exporter | bool }}"
+    image: "{{ prometheus_elasticsearch_exporter_image_full }}"
+    volumes: "{{ prometheus_elasticsearch_exporter_default_volumes + prometheus_elasticsearch_exporter_extra_volumes }}"
+    dimensions: "{{ prometheus_elasticsearch_exporter_dimensions }}"
+  prometheus-blackbox-exporter:
+    cap_add:
+      - CAP_NET_RAW
+    container_name: "prometheus_blackbox_exporter"
+    group: "prometheus-blackbox-exporter"
+    enabled: "{{ enable_prometheus_blackbox_exporter | bool }}"
+    image: "{{ prometheus_blackbox_exporter_image_full }}"
+    volumes: "{{ prometheus_blackbox_exporter_default_volumes + prometheus_blackbox_exporter_extra_volumes }}"
+    dimensions: "{{ prometheus_blackbox_exporter_dimensions }}"
+  prometheus-libvirt-exporter:
+    container_name: "prometheus_libvirt_exporter"
+    group: "prometheus-libvirt-exporter"
+    enabled: "{{ enable_prometheus_libvirt_exporter | bool }}"
+    image: "{{ prometheus_libvirt_exporter_image_full }}"
+    volumes: "{{ prometheus_libvirt_exporter_default_volumes + prometheus_libvirt_exporter_extra_volumes }}"
+    dimensions: "{{ prometheus_libvirt_exporter_dimensions }}"
+  prometheus-openstack-network-exporter:
+    container_name: "prometheus_openstack_network_exporter"
+    group: "prometheus-openstack-network-exporter"
+    enabled: "{{ enable_prometheus_openstack_network_exporter | bool }}"
+    image: "{{ prometheus_openstack_network_exporter_image_full }}"
+    volumes: "{{ prometheus_openstack_network_exporter_default_volumes + prometheus_openstack_network_exporter_extra_volumes }}"
+    dimensions: "{{ prometheus_openstack_network_exporter_dimensions }}"
+    pid_mode: host
+  prometheus-valkey-exporter:
+    container_name: "prometheus_valkey_exporter"
+    group: "prometheus-valkey-exporter"
+    enabled: "{{ enable_prometheus_valkey_exporter | bool }}"
+    image: "{{ prometheus_valkey_exporter_image_full }}"
+    volumes: "{{ prometheus_valkey_exporter_default_volumes + prometheus_valkey_exporter_extra_volumes }}"
+    dimensions: "{{ prometheus_valkey_exporter_dimensions }}"
 
+####################
+# Prometheus Server
+####################
+prometheus_external_labels:
+#  <labelname>: <labelvalue>
+
+####################
+# Server
+####################
+enable_prometheus_server_external: false
+
+####################
+# Basic Auth
+####################
+prometheus_basic_auth_users: "{{ prometheus_basic_auth_users_default + prometheus_basic_auth_users_extra }}"
+
+prometheus_basic_auth_users_default:
+  - username: admin
+    password: "{{ prometheus_password }}"
+    enabled: true
+  - username: "{{ prometheus_grafana_user }}"
+    password: "{{ prometheus_grafana_password }}"
+    enabled: "{{ enable_grafana }}"
+  - username: "{{ prometheus_haproxy_user }}"
+    password: "{{ prometheus_haproxy_password }}"
+    enabled: "{{ enable_haproxy | bool }}"
+  - username: "{{ prometheus_skyline_user }}"
+    password: "{{ prometheus_skyline_password }}"
+    enabled: "{{ enable_skyline }}"
+
+prometheus_basic_auth_users_extra: []
 ####################
 # Database
 ####################
-prometheus_mysql_exporter_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}prometheus{% endif %}"
+prometheus_mysql_exporter_database_user: >-
+  {% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}prometheus{% endif %}
+
+####################
+# HAProxy
+####################
+prometheus_active_passive: true
+prometheus_alertmanager_active_passive: true
+
+####################
+# Node Exporter
+####################
+prometheus_node_exporter_targets_extra: []
+
+####################
+# Blackbox
+####################
+
+# A list of endpoints to monitor. Each target is in the format:
+# 'service_name:blackbox_exporter_module:endpoint' for example:
+#
+# prometheus_blackbox_exporter_endpoints_custom:
+#   - 'custom_service:http_2xx:{{ public_protocol }}://{{ external_fqdn | put_address_in_context('url') }}:{{ custom_serivce_port }}'
+#
+# For a list of default endpoints see
+# prometheus_blackbox_exporter_endpoints_default.
+# For a list of modules see the alertmanager config.
+prometheus_blackbox_exporter_endpoints: >-
+  {{
+    prometheus_blackbox_exporter_endpoints_default |
+    selectattr('enabled', 'true') |
+    map(attribute='endpoints') |
+    flatten | union(prometheus_blackbox_exporter_endpoints_custom) |
+    unique | select | list | sort
+  }}
+
+prometheus_blackbox_exporter_endpoints_default:
+  # OpenStack endpoints
+  - endpoints:
+      - "aodh:os_endpoint:{{ aodh_public_endpoint }}"
+      - "{{ ('aodh_internal:os_endpoint:' + aodh_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_aodh | bool }}"
+  - endpoints:
+      - "barbican:os_endpoint:{{ barbican_public_endpoint }}"
+      - "{{ ('barbican_internal:os_endpoint:' + barbican_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_barbican | bool }}"
+  - endpoints:
+      - "blazar:os_endpoint:{{ blazar_public_base_endpoint }}"
+      - "{{ ('blazar_internal:os_endpoint:' + blazar_internal_base_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_blazar | bool }}"
+  - endpoints:
+      - "ceph_rgw:http_2xx:{{ ceph_rgw_public_base_endpoint }}"
+      - "{{ ('ceph_rgw_internal:http_2xx:' + ceph_rgw_internal_base_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_ceph_rgw | bool }}"
+  - endpoints:
+      - "cinder:os_endpoint:{{ cinder_public_base_endpoint }}"
+      - "{{ ('cinder_internal:os_endpoint:' + cinder_internal_base_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_cinder | bool }}"
+  - endpoints:
+      - "cloudkitty:os_endpoint:{{ cloudkitty_public_endpoint }}"
+      - "{{ ('cloudkitty_internal:os_endpoint:' + cloudkitty_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_cloudkitty | bool }}"
+  - endpoints:
+      - "designate:os_endpoint:{{ designate_public_endpoint }}"
+      - "{{ ('designate_internal:os_endpoint:' + designate_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_designate | bool }}"
+  - endpoints:
+      - "glance:os_endpoint:{{ glance_public_endpoint }}"
+      - "{{ ('glance_internal:os_endpoint:' + glance_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_glance | bool }}"
+  - endpoints:
+      - "gnocchi:os_endpoint:{{ gnocchi_public_endpoint }}"
+      - "{{ ('gnocchi_internal:os_endpoint:' + gnocchi_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_gnocchi | bool }}"
+  - endpoints:
+      - "heat:os_endpoint:{{ heat_public_base_endpoint }}"
+      - "{{ ('heat_internal:os_endpoint:' + heat_internal_base_endpoint) if not kolla_same_external_internal_vip | bool }}"
+      - "heat_cfn:os_endpoint:{{ heat_cfn_public_base_endpoint }}"
+      - "{{ ('heat_cfn_internal:os_endpoint:' + heat_cfn_internal_base_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_heat | bool }}"
+  - endpoints:
+      - "horizon:http_2xx:{{ horizon_public_endpoint }}"
+      - "{{ ('horizon_internal:http_2xx:' + horizon_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_horizon | bool }}"
+  - endpoints:
+      - "ironic:os_endpoint:{{ ironic_public_endpoint }}"
+      - "{{ ('ironic_internal:os_endpoint:' + ironic_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_ironic | bool }}"
+  - endpoints:
+      - "keystone:os_endpoint:{{ keystone_public_url }}"
+      - "{{ ('keystone_internal:os_endpoint:' + keystone_internal_url) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_keystone | bool }}"
+  - endpoints:
+      - "magnum:os_endpoint:{{ magnum_public_base_endpoint }}"
+      - "{{ ('magnum_internal:os_endpoint:' + magnum_internal_base_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_magnum | bool }}"
+  - endpoints:
+      - "manila:os_endpoint:{{ manila_public_base_endpoint }}"
+      - "{{ ('manila_internal:os_endpoint:' + manila_internal_base_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_manila | bool }}"
+  - endpoints:
+      - "masakari:os_endpoint:{{ masakari_public_endpoint }}"
+      - "{{ ('masakari_internal:os_endpoint:' + masakari_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_masakari | bool }}"
+  - endpoints:
+      - "mistral:os_endpoint:{{ mistral_public_base_endpoint }}"
+      - "{{ ('mistral_internal:os_endpoint:' + mistral_internal_base_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_mistral | bool }}"
+  - endpoints:
+      - "neutron:os_endpoint:{{ neutron_public_endpoint }}"
+      - "{{ ('neutron_internal:os_endpoint:' + neutron_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_neutron | bool }}"
+  - endpoints:
+      - "nova:os_endpoint:{{ nova_public_base_endpoint }}"
+      - "{{ ('nova_internal:os_endpoint:' + nova_internal_base_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_nova | bool }}"
+  - endpoints:
+      - "octavia:os_endpoint:{{ octavia_public_endpoint }}"
+      - "{{ ('octavia_internal:os_endpoint:' + octavia_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_octavia | bool }}"
+  - endpoints:
+      - "placement:os_endpoint:{{ placement_public_endpoint }}"
+      - "{{ ('placement_internal:os_endpoint:' + placement_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_placement | bool }}"
+  - endpoints:
+      - "skyline_apiserver:os_endpoint:{{ skyline_apiserver_public_endpoint }}"
+      - "{{ ('skyline_apiserver_internal:os_endpoint:' + skyline_apiserver_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+      - "skyline_console:os_endpoint:{{ skyline_console_public_endpoint }}"
+      - "{{ ('skyline_console_internal:os_endpoint:' + skyline_console_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_skyline | bool }}"
+  - endpoints:
+      - "tacker:os_endpoint:{{ tacker_public_endpoint }}"
+      - "{{ ('tacker_internal:os_endpoint:' + tacker_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_tacker | bool }}"
+  - endpoints:
+      - "trove:os_endpoint:{{ trove_public_base_endpoint }}"
+      - "{{ ('trove_internal:os_endpoint:' + trove_internal_base_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_trove | bool }}"
+  - endpoints:
+      - "watcher:os_endpoint:{{ watcher_public_endpoint }}"
+      - "{{ ('watcher_internal:os_endpoint:' + watcher_internal_endpoint) if not kolla_same_external_internal_vip | bool }}"
+    enabled: "{{ enable_watcher | bool }}"
+  # Additional service endpoints
+  - endpoints: >-
+      {%- set ns = namespace(etcd_endpoints=[]) -%}
+      {%- for host in groups.get('etcd', []) -%}
+      {%- set endpoint = 'etcd_' ~ host ~ ':http_2xx:' ~
+          hostvars[host]['etcd_protocol'] ~ '://' ~
+          ('api' | kolla_address(host) | put_address_in_context('url')) ~ ':' ~
+          hostvars[host]['etcd_client_port'] ~ '/metrics' -%}
+      {%- set ns.etcd_endpoints = ns.etcd_endpoints + [endpoint] -%}
+      {%- endfor -%}
+      {{ ns.etcd_endpoints }}
+    enabled: "{{ enable_etcd | bool }}"
+  - endpoints:
+      - "grafana:http_2xx:{{ grafana_public_endpoint }}"
+    enabled: "{{ enable_grafana | bool and enable_grafana_external | bool }}"
+  - endpoints:
+      - "grafana_internal:http_2xx:{{ grafana_internal_endpoint }}"
+    enabled: "{{ enable_grafana | bool and ((not enable_grafana_external | bool) or (not kolla_same_external_internal_vip | bool)) }}"
+  - endpoints:
+      - "opensearch:http_2xx:{{ opensearch_internal_endpoint }}"
+    enabled: "{{ enable_opensearch | bool }}"
+  - endpoints:
+      - "opensearch_dashboards:http_2xx_opensearch_dashboards:{{ opensearch_dashboards_internal_endpoint }}/api/status"
+    enabled: "{{ enable_opensearch_dashboards | bool }}"
+  - endpoints:
+      - "opensearch_dashboards_external:http_2xx_opensearch_dashboards:{{ opensearch_dashboards_external_endpoint }}/api/status"
+    enabled: "{{ enable_opensearch_dashboards_external | bool }}"
+  - endpoints:
+      - "prometheus:http_2xx_prometheus:{{ prometheus_public_endpoint if enable_prometheus_server_external else prometheus_internal_endpoint }}/-/healthy"
+    enabled: "{{ enable_prometheus | bool }}"
+  - endpoints:
+      - >-
+        prometheus_alertmanager:http_2xx_alertmanager:{{ prometheus_alertmanager_public_endpoint if enable_prometheus_alertmanager_external
+        else prometheus_alertmanager_internal_endpoint }}
+    enabled: "{{ enable_prometheus_alertmanager | bool }}"
+  - endpoints: >-
+      {%- set ns = namespace(rabbitmq_endpoints=[]) -%}
+      {%- for host in groups.get('rabbitmq', []) -%}
+      {%- set protocol = ':tls_connect:' if rabbitmq_enable_tls | bool else ':tcp_connect:' -%}
+      {%- set endpoint = 'rabbitmq_' ~ host ~ protocol ~
+          ('api' | kolla_address(host) | put_address_in_context('url')) ~ ':' ~
+          hostvars[host]['rabbitmq_port'] -%}
+      {%- set ns.rabbitmq_endpoints = ns.rabbitmq_endpoints + [endpoint] -%}
+      {%- endfor -%}
+      {{ ns.rabbitmq_endpoints }}
+    enabled: "{{ enable_rabbitmq | bool }}"
+  - endpoints: >-
+      {%- set ns = namespace(valkey_endpoints=[]) -%}
+      {%- for host in groups.get('valkey', []) -%}
+      {%- set endpoint = 'valkey_' ~ host ~ ':tcp_connect:' ~
+          ('api' | kolla_address(host) | put_address_in_context('url')) ~ ':' ~
+          hostvars[host]['valkey_server_port'] -%}
+      {%- set ns.valkey_endpoints = ns.valkey_endpoints + [endpoint] -%}
+      {%- endfor -%}
+      {{ ns.valkey_endpoints }}
+    enabled: "{{ enable_valkey | bool }}"
+
+prometheus_blackbox_exporter_endpoints_custom: []
+
 
 ####################
 # Docker
 ####################
-prometheus_install_type: "{{ kolla_install_type }}"
-prometheus_tag: "{{ openstack_release }}"
+prometheus_tag: "{{ openstack_tag }}"
 
-prometheus_server_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ prometheus_install_type }}-prometheus-server"
+prometheus_server_image: "{{ docker_image_url }}prometheus-server"
 prometheus_server_tag: "{{ prometheus_tag }}"
 prometheus_server_image_full: "{{ prometheus_server_image }}:{{ prometheus_server_tag }}"
 
-prometheus_haproxy_exporter_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ prometheus_install_type }}-prometheus-haproxy-exporter"
-prometheus_haproxy_exporter_tag: "{{ prometheus_tag }}"
-prometheus_haproxy_exporter_image_full: "{{ prometheus_haproxy_exporter_image }}:{{ prometheus_haproxy_exporter_tag }}"
-
-prometheus_mysqld_exporter_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ prometheus_install_type }}-prometheus-mysqld-exporter"
+prometheus_mysqld_exporter_image: "{{ docker_image_url }}prometheus-mysqld-exporter"
 prometheus_mysqld_exporter_tag: "{{ prometheus_tag }}"
 prometheus_mysqld_exporter_image_full: "{{ prometheus_mysqld_exporter_image }}:{{ prometheus_mysqld_exporter_tag }}"
 
-prometheus_node_exporter_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ prometheus_install_type }}-prometheus-node-exporter"
-prometheus_node_exporter_tag: "{{ prometheus_tag }}"
-prometheus_node_exporter_image_full: "{{ prometheus_node_exporter_image }}:{{ prometheus_node_exporter_tag }}"
-
-prometheus_memcached_exporter_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ prometheus_install_type }}-prometheus-memcached-exporter"
+prometheus_memcached_exporter_image: "{{ docker_image_url }}prometheus-memcached-exporter"
 prometheus_memcached_exporter_tag: "{{ prometheus_tag }}"
 prometheus_memcached_exporter_image_full: "{{ prometheus_memcached_exporter_image }}:{{ prometheus_memcached_exporter_tag }}"
 
-prometheus_cadvisor_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-prometheus-cadvisor"
-prometheus_cadvisor_tag: "{{ openstack_release }}"
-prometheus_cadvisor_image_full: "{{ prometheus_cadvisor_image }}:{{ prometheus_cadvisor_tag }}"
-
-prometheus_alertmanager_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-prometheus-alertmanager"
-prometheus_alertmanager_tag: "{{ openstack_release }}"
+prometheus_alertmanager_image: "{{ docker_image_url }}prometheus-alertmanager"
+prometheus_alertmanager_tag: "{{ prometheus_tag }}"
 prometheus_alertmanager_image_full: "{{ prometheus_alertmanager_image }}:{{ prometheus_alertmanager_tag }}"
 
+# Prometheus openstack_exporter
+prometheus_openstack_exporter_image: "{{ docker_image_url }}prometheus-openstack-exporter"
+prometheus_openstack_exporter_tag: "{{ prometheus_tag }}"
+prometheus_openstack_exporter_image_full: "{{ prometheus_openstack_exporter_image }}:{{ prometheus_openstack_exporter_tag }}"
+
+prometheus_elasticsearch_exporter_image: "{{ docker_image_url }}prometheus-elasticsearch-exporter"
+prometheus_elasticsearch_exporter_tag: "{{ prometheus_tag }}"
+prometheus_elasticsearch_exporter_image_full: "{{ prometheus_elasticsearch_exporter_image }}:{{ prometheus_elasticsearch_exporter_tag }}"
+
+prometheus_blackbox_exporter_image: "{{ docker_image_url }}prometheus-blackbox-exporter"
+prometheus_blackbox_exporter_tag: "{{ prometheus_tag }}"
+prometheus_blackbox_exporter_image_full: "{{ prometheus_blackbox_exporter_image }}:{{ prometheus_blackbox_exporter_tag }}"
+
+prometheus_libvirt_exporter_image: "{{ docker_image_url }}prometheus-libvirt-exporter"
+prometheus_libvirt_exporter_tag: "{{ prometheus_tag }}"
+prometheus_libvirt_exporter_image_full: "{{ prometheus_libvirt_exporter_image }}:{{ prometheus_libvirt_exporter_tag }}"
+
+prometheus_openstack_network_exporter_image: "{{ docker_image_url }}prometheus-openstack-network-exporter"
+prometheus_openstack_network_exporter_tag: "{{ prometheus_tag }}"
+prometheus_openstack_network_exporter_image_full: "{{ prometheus_openstack_network_exporter_image }}:{{ prometheus_openstack_network_exporter_tag }}"
+
+prometheus_valkey_exporter_image: "{{ docker_image_url }}prometheus-valkey-exporter"
+prometheus_valkey_exporter_tag: "{{ prometheus_tag }}"
+prometheus_valkey_exporter_image_full: "{{ prometheus_valkey_exporter_image }}:{{ prometheus_valkey_exporter_tag }}"
+
 prometheus_server_dimensions: "{{ default_container_dimensions }}"
-prometheus_haproxy_exporter_dimensions: "{{ default_container_dimensions }}"
 prometheus_mysqld_exporter_dimensions: "{{ default_container_dimensions }}"
-prometheus_node_exporter_dimensions: "{{ default_container_dimensions }}"
 prometheus_memcached_exporter_dimensions: "{{ default_container_dimensions }}"
-prometheus_cadvisor_dimensions: "{{ default_container_dimensions }}"
 prometheus_alertmanager_dimensions: "{{ default_container_dimensions }}"
+prometheus_openstack_exporter_dimensions: "{{ default_container_dimensions }}"
+prometheus_elasticsearch_exporter_dimensions: "{{ default_container_dimensions }}"
+prometheus_blackbox_exporter_dimensions: "{{ default_container_dimensions }}"
+prometheus_libvirt_exporter_dimensions: "{{ default_container_dimensions }}"
+prometheus_openstack_network_exporter_dimensions: "{{ default_container_dimensions }}"
+prometheus_valkey_exporter_dimensions: "{{ default_container_dimensions }}"
+
+prometheus_alertmanager_enable_healthchecks: "{{ enable_container_healthchecks }}"
+prometheus_alertmanager_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+prometheus_alertmanager_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+prometheus_alertmanager_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+prometheus_alertmanager_healthcheck_test:
+  - "CMD-SHELL"
+  - >-
+    healthcheck_curl http://{{
+    api_interface_address | put_address_in_context('url') }}:{{ prometheus_alertmanager_port }}/-/healthy
+prometheus_alertmanager_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+prometheus_alertmanager_healthcheck:
+  interval: "{{ prometheus_alertmanager_healthcheck_interval }}"
+  retries: "{{ prometheus_alertmanager_healthcheck_retries }}"
+  start_period: "{{ prometheus_alertmanager_healthcheck_start_period }}"
+  test: "{% if prometheus_alertmanager_enable_healthchecks | bool %}{{ prometheus_alertmanager_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ prometheus_alertmanager_healthcheck_timeout }}"
+
+prometheus_server_default_volumes:
+  - "{{ node_config_directory }}/prometheus-server/:{{ container_config_directory }}/:ro"
+  - "prometheus_server:/var/lib/prometheus"
+  - "kolla_logs:/var/log/kolla/"
+prometheus_mysqld_exporter_default_volumes:
+  - "{{ node_config_directory }}/prometheus-mysqld-exporter/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+prometheus_memcached_exporter_default_volumes:
+  - "{{ node_config_directory }}/prometheus-memcached-exporter/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+prometheus_alertmanager_default_volumes:
+  - "{{ node_config_directory }}/prometheus-alertmanager/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "prometheus:/var/lib/prometheus"
+prometheus_openstack_exporter_default_volumes:
+  - "{{ node_config_directory }}/prometheus-openstack-exporter/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+prometheus_elasticsearch_exporter_default_volumes:
+  - "{{ node_config_directory }}/prometheus-elasticsearch-exporter/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+prometheus_blackbox_exporter_default_volumes:
+  - "{{ node_config_directory }}/prometheus-blackbox-exporter/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+prometheus_libvirt_exporter_default_volumes:
+  - "{{ node_config_directory }}/prometheus-libvirt-exporter/:{{ container_config_directory }}/:ro"
+  - "/run/libvirt:/run/libvirt:ro"
+prometheus_openstack_network_exporter_default_volumes:
+  - "{{ node_config_directory }}/prometheus-openstack-network-exporter/:{{ container_config_directory }}/:ro"
+  - "/run/ovn:/run/ovn:ro"
+  - "/run/openvswitch:/run/openvswitch:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+prometheus_valkey_exporter_default_volumes:
+  - "{{ node_config_directory }}/prometheus-valkey-exporter/:{{ container_config_directory }}/:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+
+prometheus_extra_volumes: "{{ default_extra_volumes }}"
+prometheus_server_extra_volumes: "{{ prometheus_extra_volumes }}"
+prometheus_mysqld_exporter_extra_volumes: "{{ prometheus_extra_volumes }}"
+prometheus_memcached_exporter_extra_volumes: "{{ prometheus_extra_volumes }}"
+prometheus_alertmanager_extra_volumes: "{{ prometheus_extra_volumes }}"
+prometheus_openstack_exporter_extra_volumes: "{{ prometheus_extra_volumes }}"
+prometheus_elasticsearch_exporter_extra_volumes: "{{ prometheus_extra_volumes }}"
+prometheus_blackbox_exporter_extra_volumes: "{{ prometheus_extra_volumes }}"
+prometheus_libvirt_exporter_extra_volumes: "{{ prometheus_extra_volumes }}"
+prometheus_openstack_network_exporter_extra_volumes: "{{ prometheus_extra_volumes }}"
+prometheus_valkey_exporter_extra_volumes: "{{ prometheus_extra_volumes }}"
+
+prometheus_openstack_exporter_disabled_volume: "{{ '--disable-service.volume' if not enable_cinder | bool else '' }}"
+prometheus_openstack_exporter_disabled_dns: "{{ '--disable-service.dns' if not enable_designate | bool else '' }}"
+prometheus_openstack_exporter_disabled_lb: >-
+  {{
+    '--disable-service.load-balancer --disable-metric=neutron-loadbalancers --disable-metric=neutron-loadbalancers_not_active' if not enable_octavia | bool
+    else ''
+  }}
+prometheus_openstack_exporter_disabled_items: >-
+  {{
+    [prometheus_openstack_exporter_disabled_volume, prometheus_openstack_exporter_disabled_dns, prometheus_openstack_exporter_disabled_lb | trim] |
+    join(' ') | trim
+  }}
+
+prometheus_server_command: >-
+  /opt/prometheus/prometheus --web.config.file=/etc/prometheus/web.yml --config.file /etc/prometheus/prometheus.yml
+  --web.listen-address {{ api_interface_address | put_address_in_context('url') }}:{{ prometheus_port }}
+  --web.external-url={{ prometheus_public_endpoint if enable_prometheus_server_external else prometheus_internal_endpoint }}
+  --storage.tsdb.path /var/lib/prometheus{% if prometheus_cmdline_extras %} {{ prometheus_cmdline_extras }}{% endif %}
+
+prometheus_blackbox_exporter_cmdline_extras: ""
+prometheus_elasticsearch_exporter_cmdline_extras: ""
+prometheus_memcached_exporter_cmdline_extras: ""
+prometheus_mysqld_exporter_cmdline_extras: ""
+prometheus_openstack_exporter_cmdline_extras: ""
+
+prometheus_alertmanager_external_url: "{{ internal_protocol }}://{{ kolla_internal_fqdn | put_address_in_context('url') }}:{{ prometheus_alertmanager_port }}"
+
+############
+# Intervals
+############
+prometheus_openstack_network_exporter_interval: "{{ prometheus_scrape_interval }}"
+
+###################
+# Copy certificates
+###################
+prometheus_copy_certs: "{{ kolla_copy_ca_into_containers | bool }}"

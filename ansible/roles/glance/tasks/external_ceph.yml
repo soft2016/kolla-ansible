@@ -1,23 +1,43 @@
 ---
-- name: Copy over ceph files
-  copy:
-    src: "{{ item }}"
-    dest: "{{ node_config_directory }}/glance-api/"
+- name: Ensuring glance service ceph config subdir exists
+  vars:
+    service: "{{ glance_services['glance-api'] }}"
+  ansible.builtin.file:
+    path: "{{ node_config_directory }}/glance-api/ceph"
+    state: "directory"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
+  when: service | service_enabled_and_mapped_to_host
+
+- name: Copy over multiple ceph configs for Glance
+  merge_configs:
+    sources:
+      - "{{ node_custom_config }}/glance/{{ item.cluster }}.conf"
+      - "{{ node_custom_config }}/glance/glance-api/{{ item.cluster }}.conf"
+    dest: "{{ node_config_directory }}/glance-api/ceph/{{ item.cluster }}.conf"
     mode: "0660"
   become: true
   when: inventory_hostname in groups['glance-api']
-  with_fileglob:
-    - "{{ node_custom_config }}/glance/ceph*"
-  notify:
-    - Restart glance-api container
+  with_items: "{{ glance_ceph_backends }}"
+
+- name: Copy over ceph Glance keyrings
+  vars:
+    keyring: "{{ item.cluster }}.client.{{ item.user }}.keyring"
+  ansible.builtin.template:
+    src: "{{ node_custom_config }}/glance/{{ keyring }}"
+    dest: "{{ node_config_directory }}/glance-api/ceph/{{ keyring }}"
+    mode: "0660"
+  become: true
+  with_items: "{{ glance_ceph_backends }}"
+  when: inventory_hostname in groups['glance-api']
 
 - name: Ensuring config directory has correct owner and permission
-  file:
-    path: "{{ node_config_directory }}/{{ item }}"
-    recurse: yes
+  ansible.builtin.file:
+    path: "{{ node_config_directory }}/glance-api"
+    recurse: true
     owner: "{{ config_owner_user }}"
     group: "{{ config_owner_group }}"
   become: true
   when: inventory_hostname in groups['glance-api']
-  with_items:
-    - "glance-api"

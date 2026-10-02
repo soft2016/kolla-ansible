@@ -1,0 +1,9 @@
+---
+- name: Configure prometheus-node-exporters
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check prometheus-node-exporters containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

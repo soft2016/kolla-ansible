@@ -1,32 +1,38 @@
 ---
 - name: Creating grafana database
+  become: true
   kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
     module_name: mysql_db
     module_args:
+      ca_cert: "{{ openstack_cacert if database_enable_tls_internal | bool else omit }}"
       login_host: "{{ database_address }}"
       login_port: "{{ database_port }}"
-      login_user: "{{ database_user }}"
+      login_user: "{{ grafana_database_shard_root_user }}"
       login_password: "{{ database_password }}"
       name: "{{ grafana_database_name }}"
-  run_once: True
+  run_once: true
   delegate_to: "{{ groups['grafana'][0] }}"
   when:
     - not use_preconfigured_databases | bool
 
 - name: Creating grafana database user and setting permissions
+  become: true
   kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
     module_name: mysql_user
     module_args:
+      ca_cert: "{{ openstack_cacert if database_enable_tls_internal | bool else omit }}"
       login_host: "{{ database_address }}"
       login_port: "{{ database_port }}"
-      login_user: "{{ database_user }}"
+      login_user: "{{ grafana_database_shard_root_user }}"
       login_password: "{{ database_password }}"
       name: "{{ grafana_database_user }}"
       password: "{{ grafana_database_password }}"
       host: "%"
       priv: "{{ grafana_database_name }}.*:ALL"
       append_privs: "yes"
-  run_once: True
+  run_once: true
   delegate_to: "{{ groups['grafana'][0] }}"
   when:
     - not use_preconfigured_databases | bool

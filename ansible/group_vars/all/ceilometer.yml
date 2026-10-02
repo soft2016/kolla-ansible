@@ -1,0 +1,4 @@
+---
+enable_ceilometer: false
+enable_ceilometer_ipmi: false
+enable_ceilometer_prometheus_pushgateway: false

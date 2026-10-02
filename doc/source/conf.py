@@ -15,6 +15,9 @@
 import os
 import sys
 
+import openstackdocstheme
+
+
 sys.path.insert(0, os.path.abspath('../..'))
 # -- General configuration ----------------------------------------------------
 
@@ -23,6 +26,7 @@ sys.path.insert(0, os.path.abspath('../..'))
 extensions = [
     'openstackdocstheme',
     'sphinx.ext.autodoc',
+    'sphinxcontrib.rsvgconverter',
 ]
 
 # autodoc generation is a bit aggressive and a nuisance when doing heavy
@@ -36,19 +40,8 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'kolla-ansible'
-copyright = u'2013, OpenStack Foundation'
-
-# The version info for the project you're documenting, acts as replacement for
-# |version| and |release|, also used in various other places throughout the
-# built documents.
-#
-# The short X.Y version.
-from kolla_ansible.version import version_info as kolla_version
-# The full version, including alpha/beta/rc tags.
-release = kolla_version.version_string_with_vcs()
-# The short X.Y version.
-version = kolla_version.canonical_version_string()
+project = 'Kolla Ansible'
+copyright = '2013, OpenStack Foundation'
 
 # If true, '()' will be appended to :func: etc. cross-reference text.
 add_function_parentheses = True
@@ -58,7 +51,7 @@ add_function_parentheses = True
 add_module_names = True
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'sphinx'
+pygments_style = 'native'
 
 # -- Options for HTML output --------------------------------------------------
 
@@ -68,23 +61,114 @@ pygments_style = 'sphinx'
 html_theme = 'openstackdocs'
 # html_static_path = ['static']
 
-# Output file base name for HTML help builder.
-htmlhelp_basename = '%sdoc' % project
+# Add any paths that contain "extra" files, such as .htaccess or
+# robots.txt.
+html_extra_path = ['_extra']
 
-# Must set this variable to include year, month, day, hours, and minutes.
-html_last_updated_fmt = '%Y-%m-%d %H:%M'
+html_theme_options = {
+    "show_other_versions": True,
+}
+
+# Output file base name for HTML help builder.
+htmlhelp_basename = 'kolla-ansibledoc'
 
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass
 # [howto/manual]).
 latex_documents = [
     ('index',
-     '%s.tex' % project,
-     u'%s Documentation' % project,
-     u'OpenStack Foundation', 'manual'),
+     'doc-kolla-ansible.tex',
+     'Kolla Ansible Documentation',
+     'OpenStack Foundation', 'manual'),
 ]
 
+# Disable usage of xindy https://bugzilla.redhat.com/show_bug.cgi?id=1643664
+latex_use_xindy = False
+
 # openstackdocstheme options
-repository_name = 'openstack/kolla-ansible'
-bug_project = 'kolla-ansible'
-bug_tag = ''
+openstackdocs_repo_name = 'openstack/kolla-ansible'
+openstackdocs_pdf_link = True
+openstackdocs_bug_project = 'kolla-ansible'
+openstackdocs_bug_tag = ''
+openstack_projects = [
+    'bifrost',
+    'cinder',
+    'cloudkitty',
+    'designate',
+    'glance',
+    'ironic',
+    'keystone',
+    'kayobe',
+    'kolla',
+    'kolla-ansible',
+    'magnum',
+    'manila',
+    'networking-sfc',
+    'neutron-vpnaas',
+    'neutron',
+    'nova',
+    'octavia',
+    'oslo.messaging',
+    'oslotest',
+    'ovn-octavia-provider',
+    'watcher',
+]
+
+# Global variables
+# For replacement, use in docs as |VAR_NAME| (note there's no space around variable name)
+# When adding new variables, that you want to use in documentation, make sure you add
+# them to GLOBAL_VARIABLE_MAP dictionary as well. KOLLA_OPENSTACK_RELEASE_UNMAINTAINED is
+# used only to denote unmaintained branches, and it is not intended to be used for
+# replacing anything in documentation.
+
+OPENSTACK_RELEASE = openstackdocstheme.ext._get_series_name()
+
+KOLLA_OPENSTACK_RELEASE_UNMAINTAINED = [
+    '2023.1',
+]
+
+if OPENSTACK_RELEASE == 'latest':
+    KOLLA_OPENSTACK_RELEASE = 'master'
+    KOLLA_BRANCH_NAME = 'master'
+    TESTED_RUNTIMES_GOVERNANCE_URL = 'https://governance.openstack.org/tc/reference/runtimes/'
+elif OPENSTACK_RELEASE in KOLLA_OPENSTACK_RELEASE_UNMAINTAINED:
+    KOLLA_OPENSTACK_RELEASE = OPENSTACK_RELEASE
+    KOLLA_BRANCH_NAME = 'unmaintained/{}'.format(KOLLA_OPENSTACK_RELEASE)
+    TESTED_RUNTIMES_GOVERNANCE_URL =\
+        'https://governance.openstack.org/tc/reference/runtimes/{}.html'.format(KOLLA_OPENSTACK_RELEASE)
+else:
+    KOLLA_OPENSTACK_RELEASE = OPENSTACK_RELEASE
+    KOLLA_BRANCH_NAME = 'stable/{}'.format(KOLLA_OPENSTACK_RELEASE)
+    TESTED_RUNTIMES_GOVERNANCE_URL =\
+        'https://governance.openstack.org/tc/reference/runtimes/{}.html'.format(KOLLA_OPENSTACK_RELEASE)
+
+ANSIBLE_CORE_VERSION_MIN = '2.20'
+ANSIBLE_CORE_VERSION_MAX = '2.21'
+ANSIBLE_VERSION_MIN = '13'
+ANSIBLE_VERSION_MAX = '14'
+
+GLOBAL_VARIABLE_MAP = {
+    '|ANSIBLE_CORE_VERSION_MIN|': ANSIBLE_CORE_VERSION_MIN,
+    '|ANSIBLE_CORE_VERSION_MAX|': ANSIBLE_CORE_VERSION_MAX,
+    '|ANSIBLE_VERSION_MIN|': ANSIBLE_VERSION_MIN,
+    '|ANSIBLE_VERSION_MAX|': ANSIBLE_VERSION_MAX,
+    '|KOLLA_OPENSTACK_RELEASE|': KOLLA_OPENSTACK_RELEASE,
+    '|KOLLA_BRANCH_NAME|': KOLLA_BRANCH_NAME,
+    '|KOLLA_BRANCH_NAME_DASHED|': KOLLA_BRANCH_NAME.replace('/', '-'),
+    '|OPENSTACK_RELEASE|': OPENSTACK_RELEASE,
+    '|TESTED_RUNTIMES_GOVERNANCE_URL|': TESTED_RUNTIMES_GOVERNANCE_URL,
+}
+
+
+def replace_global_vars(app, docname, source):
+    # unlike rst_epilog, replaces variables (strings) in code blocks as well
+    # thanks to https://github.com/sphinx-doc/sphinx/issues/4054#issuecomment-329097229
+    result = source[0]
+    for key in app.config.GLOBAL_VARIABLE_MAP:
+        result = result.replace(key, app.config.GLOBAL_VARIABLE_MAP[key])
+    source[0] = result
+
+
+def setup(app):
+   app.add_config_value('GLOBAL_VARIABLE_MAP', {}, True)
+   app.connect('source-read', replace_global_vars)

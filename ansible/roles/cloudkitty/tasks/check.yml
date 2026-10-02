@@ -1,1 +1,4 @@
 ---
+- name: Checking Cloudkitty containers
+  ansible.builtin.import_role:
+    role: service-check

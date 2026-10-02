@@ -1,0 +1,81 @@
+---
+- name: Ensuring private backend directory exist
+  ansible.builtin.file:
+    path: "{{ certificates_backend_dir }}"
+    mode: "0770"
+    state: "directory"
+
+- name: Creating backend Server Certificate key
+  community.crypto.openssl_privatekey:
+    path: "{{ certificates_backend_dir }}/backend.key"
+    mode: "0660"
+    size: 2048
+    type: RSA
+
+- name: Creating backend Server Certificate signing request
+  community.crypto.openssl_csr:
+    path: "{{ certificates_backend_dir }}/backend.csr"
+    digest: "sha256"
+    country_name: "US"
+    locality_name: "RTP"
+    state_or_province_name: "NC"
+    organizational_unit_name: "kolla"
+    privatekey_path: "{{ certificates_backend_dir }}/backend.key"
+    subject_alt_name: >-
+      {%- set _san = [] -%}
+      {%- for host in groups['tls-backend'] -%}
+      {{ _san.append('IP:' ~ ('api' | kolla_address(host))) }}
+      {%- endfor -%}
+      {{ _san }}
+
+- name: Creating backend Server Certificate from CSR
+  community.crypto.x509_certificate:
+    path: "{{ certificates_backend_dir }}/backend.crt"
+    csr_path: "{{ certificates_backend_dir }}/backend.csr"
+    ownca_digest: "sha256"
+    ownca_not_after: "+500d"
+    ownca_path: "{{ certificates_root_dir }}/root.crt"
+    ownca_privatekey_path: "{{ certificates_root_dir }}/root.key"
+    privatekey_path: "{{ certificates_backend_dir }}/backend.key"
+    provider: ownca
+
+- name: Copy backend cert to default configuration location
+  ansible.builtin.copy:
+    src: "{{ certificates_backend_dir }}/backend.crt"
+    dest: "{{ kolla_certificates_dir }}/backend-cert.pem"
+    mode: "0660"
+
+- name: Copy backend key to default configuration location
+  ansible.builtin.copy:
+    src: "{{ certificates_backend_dir }}/backend.key"
+    dest: "{{ kolla_certificates_dir }}/backend-key.pem"
+    mode: "0660"
+
+- name: Copy backend TLS certificate and key for RabbitMQ
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0600"
+    remote_src: true
+  loop:
+    - src: "{{ kolla_tls_backend_cert }}"
+      dest: "{{ kolla_certificates_dir }}/rabbitmq-cert.pem"
+    - src: "{{ kolla_tls_backend_key }}"
+      dest: "{{ kolla_certificates_dir }}/rabbitmq-key.pem"
+  when:
+    - rabbitmq_enable_tls | bool
+
+- name: Copy backend TLS certificate and key for Mariadb
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "{{ item.mode | default('0600') }}"
+    remote_src: true
+  with_items:
+    - src: "{{ kolla_tls_backend_cert }}"
+      dest: "{{ kolla_certificates_dir }}/mariadb-cert.pem"
+      mode: "0644"
+    - src: "{{ kolla_tls_backend_key }}"
+      dest: "{{ kolla_certificates_dir }}/mariadb-key.pem"
+  when:
+    - database_enable_tls_backend | bool

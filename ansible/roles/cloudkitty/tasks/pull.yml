@@ -1,11 +1,4 @@
 ---
-- name: Pulling cloudkitty images
-  become: true
-  kolla_docker:
-    action: "pull_image"
-    common_options: "{{ docker_common_options }}"
-    image: "{{ item.value.image }}"
-  when:
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ cloudkitty_services }}"
+- name: Pull cloudkitty images
+  ansible.builtin.import_role:
+    role: service-images-pull

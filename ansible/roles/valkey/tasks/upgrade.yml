@@ -1,0 +1,16 @@
+---
+- name: Set valkey master host
+  ansible.builtin.set_fact:
+    valkey_master_host: "{{ groups['valkey'][0] }}"
+
+- name: Reconfigure/Redeploy Valkey on default ports
+  ansible.builtin.import_tasks: reconfigure.yml
+
+- name: Verify Valkey responds on port 6379
+  ansible.builtin.import_tasks: check.yml
+
+- name: Check valkey containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

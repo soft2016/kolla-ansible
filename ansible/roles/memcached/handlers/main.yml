@@ -3,16 +3,11 @@
   vars:
     service: "{{ memcached_services.memcached }}"
   become: true
-  kolla_docker:
+  kolla_container:
     action: "recreate_or_restart_container"
     common_options: "{{ docker_common_options }}"
     image: "{{ service.image }}"
     name: "{{ service.container_name }}"
     volumes: "{{ service.volumes }}"
     dimensions: "{{ service.dimensions }}"
-  when:
-    - kolla_action != "config"
-    - inventory_hostname in groups[service.group]
-    - service.enabled | bool
-    - memcached_config_json.changed | bool
-      or check_memcached_container.changed | bool
+    healthcheck: "{{ service.healthcheck | default(omit) }}"

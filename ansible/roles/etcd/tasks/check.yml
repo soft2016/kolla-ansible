@@ -1,1 +1,4 @@
 ---
+- name: Checking Etcd containers
+  ansible.builtin.import_role:
+    role: service-check

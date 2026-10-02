@@ -4,11 +4,15 @@
 Virtual Environments
 ====================
 
-Python `virtual environments <https://virtualenv.pypa.io/en/stable/>`_ provide
-a mechanism for isolating python packages from the system site packages, and
-other virtual environments. Kolla-ansible largely avoids this problem by
+Python `virtual environments <https://docs.python.org/3/library/venv.html>`_
+provide a mechanism for isolating python packages from the system site packages
+and other virtual environments. Kolla-ansible largely avoids this problem by
 deploying services in Docker containers, however some python dependencies must
 be installed both on the Ansible control host and the target hosts.
+
+Kolla Ansible supports the default Python 3 versions provided by the
+:kolla-ansible-doc:`supported Operating Systems <user/support-matrix>`. For
+more information see `tested runtimes <|TESTED_RUNTIMES_GOVERNANCE_URL|>`_.
 
 Ansible Control Host
 ====================
@@ -18,19 +22,12 @@ python virtual environment on the Ansible control host. For example:
 
 .. code-block:: console
 
-   virtualenv /path/to/venv
+   python3 -m venv /path/to/venv
    source /path/to/venv/bin/activate
    pip install -U pip
    pip install kolla-ansible
+   pip install 'ansible>=6,<8'
    deactivate
-
-It may be advantageous to also install Ansible in the virtual environment.
-
-.. code-block:: console
-
-   source /path/to/venv/bin/activate
-   (venv) pip install ansible
-   (venv) deactivate
 
 To use the virtual environment, it should first be activated:
 
@@ -48,6 +45,8 @@ The virtual environment can be deactivated when necessary:
 Note that the use of a virtual environment on the Ansible control host does not
 imply that a virtual environment will be used for execution of Ansible modules
 on the target hosts.
+
+.. _virtual-environments-target-hosts:
 
 Target Hosts
 ============

@@ -1,2 +1,3 @@
 ---
-- include_tasks: deploy.yml
+- name: Deploy magnum
+  ansible.builtin.import_tasks: deploy.yml

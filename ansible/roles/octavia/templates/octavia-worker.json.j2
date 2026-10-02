@@ -6,24 +6,55 @@
             "dest": "/etc/octavia/octavia.conf",
             "owner": "octavia",
             "perm": "0600"
-        },
+        }{% if 'amphora' in octavia_provider_drivers %},
         {
-            "source": "{{ container_config_directory }}/cakey.pem",
-            "dest": "/etc/octavia/certs/private/cakey.pem",
+            "source": "{{ container_config_directory }}/client.cert-and-key.pem",
+            "dest": "/etc/octavia/certs/client.cert-and-key.pem",
             "owner": "octavia",
             "perm": "0600"
         },
         {
-            "source": "{{ container_config_directory }}/ca_01.pem",
-            "dest": "/etc/octavia/certs/ca_01.pem",
+            "source": "{{ container_config_directory }}/client_ca.cert.pem",
+            "dest": "/etc/octavia/certs/client_ca.cert.pem",
             "owner": "octavia",
             "perm": "0600"
         },
         {
-            "source": "{{ container_config_directory }}/client.pem",
-            "dest": "/etc/octavia/certs/client.pem",
+            "source": "{{ container_config_directory }}/server_ca.cert.pem",
+            "dest": "/etc/octavia/certs/server_ca.cert.pem",
             "owner": "octavia",
             "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/server_ca.key.pem",
+            "dest": "/etc/octavia/certs/server_ca.key.pem",
+            "owner": "octavia",
+            "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/octavia",
+            "owner": "octavia:kolla",
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/octavia/*.log",
+            "owner": "octavia:kolla",
+            "perm": "0664"
         }
     ]
 }

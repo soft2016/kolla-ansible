@@ -1,0 +1,3 @@
+---
+- name: Check valkey containers
+  ansible.builtin.import_tasks: check-containers.yml

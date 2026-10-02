@@ -2,8 +2,8 @@
 # Ironic log directory.
 ironic_log_dir: "/var/log/kolla/ironic"
 
-# Ironic inspector log directory.
-inspector_log_dir: "/var/log/kolla/ironic-inspector"
+# Ironic Python Agent deploy logs directory
+ironic_agent_deploy_logs_local_path: "/var/log/kolla/ironic/deploy"
 
 # Nginx log directory.
 nginx_log_dir: "/var/log/kolla/nginx"
@@ -17,3 +17,23 @@ network_interface: "{{ bifrost_network_interface }}"
 # during deployment. If we use a directory under /httpboot to store the
 # master images this issue is avoided.
 ironic_tftp_master_path: "/httpboot/master_images"
+
+# Bifrost in Yoga changed the default TFTP and HTTP boot directories to reside
+# under /var/lib/ironic/. Avoid this breaking us by reverting to the previous
+# defaults. https://review.opendev.org/c/openstack/bifrost/+/822743
+tftp_boot_folder: "/tftpboot"
+http_boot_folder: "/httpboot"
+
+# Enable TLS and generate self-signed certificates.
+enable_tls: true
+generate_tls: true
+# NOTE: Needs to be world-readable, writeable by root, and persistent, which
+# the default /etc/bifrost is not.
+tls_root: "/etc/bifrost-certs"
+
+# Disable firewalld
+use_firewalld: false
+
+# Disable Bifrost OCI artifact registry which is not compatible with running
+# Bifrost inside a container.
+enable_registry: false

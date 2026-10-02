@@ -1,0 +1,37 @@
+{% set cron_cmd = 'cron -f' if kolla_base_distro in ['ubuntu', 'debian'] else 'crond -s -n' %}
+{
+    "command": "{{ cron_cmd }}",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/logrotate.conf",
+            "dest": "/etc/logrotate.conf",
+            "owner": "root",
+            "perm": "0600"
+        }{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/cron",
+            "owner": "root:kolla",
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/cron/*.log",
+            "owner": "root:kolla",
+            "perm": "0664"
+        }
+    ]
+}

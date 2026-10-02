@@ -1,41 +1,38 @@
 ---
-project_name: "memcached"
-
 memcached_services:
   memcached:
     container_name: "memcached"
     image: "{{ memcached_image_full }}"
     enabled: true
     group: "memcached"
-    volumes:
-      - "{{ node_config_directory }}/memcached/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
+    volumes: "{{ memcached_default_volumes + memcached_extra_volumes }}"
     dimensions: "{{ memcached_dimensions }}"
-    haproxy:
-      memcached:
-        enabled: "{{ enable_memcached|bool and enable_haproxy_memcached|bool }}"
-        mode: "tcp"
-        port: "{{ memcached_port }}"
-        frontend_tcp_extra:
-          - "option clitcpka"
-          - "timeout client 3600s"
-        backend_tcp_extra:
-          - "option srvtcpka"
-          - "timeout server 3600s"
-        custom_member_list: "{{ haproxy_members.split(';') }}"
-
-####################
-# HAProxy
-####################
-haproxy_members: "{% for host in groups['memcached'] %}server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ memcached_port }} check inter 2000 rise 2 fall 5{% if not loop.first %} backup{% endif %};{% endfor %}"
+    healthcheck: "{{ memcached_healthcheck }}"
 
 ####################
 # Docker
 ####################
-memcached_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-memcached"
-memcached_tag: "{{ openstack_release }}"
+memcached_image: "{{ docker_image_url }}memcached"
+memcached_tag: "{{ openstack_tag }}"
 memcached_image_full: "{{ memcached_image }}:{{ memcached_tag }}"
 memcached_dimensions: "{{ default_container_dimensions }}"
+
+memcached_enable_healthchecks: "{{ enable_container_healthchecks }}"
+memcached_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+memcached_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+memcached_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+memcached_healthcheck_test: ["CMD-SHELL", "healthcheck_listen memcached {{ memcached_port }}"]
+memcached_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+memcached_healthcheck:
+  interval: "{{ memcached_healthcheck_interval }}"
+  retries: "{{ memcached_healthcheck_retries }}"
+  start_period: "{{ memcached_healthcheck_start_period }}"
+  test: "{% if memcached_enable_healthchecks | bool %}{{ memcached_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ memcached_healthcheck_timeout }}"
+
+memcached_default_volumes:
+  - "{{ node_config_directory }}/memcached/:{{ container_config_directory }}/:ro"
+memcached_extra_volumes: "{{ default_extra_volumes }}"
 
 ####################
 # Memcached options

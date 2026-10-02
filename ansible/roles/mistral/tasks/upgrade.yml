@@ -1,7 +1,12 @@
 ---
-- include_tasks: config.yml
+- name: Configure mistral
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: bootstrap_service.yml
+- name: Check mistral containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Run mistral bootstrap container
+  ansible.builtin.import_tasks: bootstrap_service.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

@@ -1,14 +1,15 @@
 ---
-- include_tasks: register.yml
-  when: inventory_hostname in groups['gnocchi-api']
+- name: Register gnocchi in Keystone
+  ansible.builtin.import_tasks: register.yml
 
-- include_tasks: config.yml
-  when: inventory_hostname in groups['gnocchi-statsd'] or
-        inventory_hostname in groups['gnocchi-api'] or
-        inventory_hostname in groups['gnocchi-metricd']
+- name: Configure gnocchi
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: bootstrap.yml
-  when: inventory_hostname in groups['gnocchi-api']
+- name: Check gnocchi containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Bootstrap gnocchi service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

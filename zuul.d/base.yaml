@@ -4,26 +4,99 @@
     pre-run: tests/pre.yml
     run: tests/run.yml
     post-run: tests/post.yml
-    attempts: 1
-    timeout: 7200
+    timeout: 9000
+    post-timeout: 1800
     required-projects:
+      - openstack/ansible-collection-kolla
       - openstack/kolla
+      - openstack/kolla-ansible
+      - openstack/tempest
       - openstack/requirements
+    files:
+      - ^ansible/site.yml
+      - ^ansible/group_vars/all/common.yml
+      - ^ansible/roles/certificates/
+      - ^requirements-core.yml
+      - ^roles/kolla-ansible-test-dashboard/
+      - ^tests/check-(config|failure|logs).sh
+      - ^tests/get_logs.sh
+      - ^tests/init-core-openstack.sh
+      - ^tests/(run|pre|post).yml
+      - ^tests/setup_gate.sh
+      - ^tests/templates/(inventory|globals-default).j2
+      - ^tests/upgrade.sh
     irrelevant-files:
+      - ^.*\.md$
       - ^.*\.rst$
+      - ^bindep.txt$
       - ^doc/.*
-      - ^test-requirements.txt$
       - ^releasenotes/.*$
-    vars:
-      scenario: aio
-      enable_core_openstack: yes
+      - ^deploy-guide/.*$
+      - ^test-requirements.txt$
+      - ^lint-requirements.txt$
+      - ^etc/kolla/globals.yml$
+      - ^tox.ini$
+      - ^\..+
+      - ^LICENSE$
+      - ^contrib/
+      - ^specs/
+      - ^kolla_ansible/tests/
+      - ^tools/validate-.*$
+      - ^zuul.d/
     roles:
-      - zuul: openstack-infra/zuul-jobs
-
-- job:
-    name: kolla-ansible-bifrost-base
-    parent: kolla-ansible-base
+      - zuul: zuul/zuul-jobs
+      - zuul: openstack/kolla
     vars:
-      scenario: bifrost
-      install_type: source
-      enable_core_openstack: no
+      address_family: 'ipv4'
+      # Test latest ansible-core version on Ubuntu, minimum supported on others.
+      # Use SLURP version (two releases back) on SLURP upgrades.
+      ansible_core_version_constraint: >-
+        {{ ansible_core_version_slurp if is_slurp else ansible_core_version_min if is_upgrade
+        or ansible_facts.distribution != "Ubuntu" else ansible_core_version_max }}
+      ansible_core_version_slurp: "==2.20.*"
+      ansible_core_version_max: "==2.21.*"
+      ansible_core_version_min: "==2.20.*"
+      # NOTE(mgoddard): Test the use of interface names with dashes.
+      api_interface_name: "vxlan-0"
+      api_network_prefix: "192.0.2."
+      api_network_prefix_length: "24"
+      base_distro: "{{ zuul.job.split('-').2 }}"
+      configure_swap_size: 0
+      container_engine: "docker"
+      is_upgrade: "{{ 'upgrade' in zuul.job }}"
+      is_slurp: "{{ 'slurp' in zuul.job }}"
+      kolla_ansible_tempest_regex:
+        - .*smoke.*
+      kolla_internal_vip_address: "192.0.2.10"
+      le_enabled: false
+      neutron_external_bridge_name: br-0
+      neutron_external_interface_name: >-
+        veth-{{ neutron_external_bridge_name }}-ext
+      neutron_external_network_prefix: "198.51.100."
+      neutron_external_network_prefix_length: "24"
+      neutron_external_vxlan_interface_name: "vxlan-1"
+      neutron_tenant_network_dns_server: "8.8.8.8"
+      neutron_tenant_network_prefix: "203.0.113."
+      neutron_tenant_network_prefix_length: "24"
+      previous_release: "{{ '2025.1' if is_slurp else '2026.1' }}"
+      scenario: core
+      scenario_images_core:
+        - ^cron
+        - ^fluentd
+        - ^glance
+        - ^haproxy
+        - ^heat
+        - ^horizon
+        - ^keepalived
+        - ^keystone
+        - ^kolla-toolbox
+        - ^mariadb
+        - ^memcached
+        - ^neutron
+        - ^nova-
+        - ^openvswitch
+        - ^placement
+        - ^proxysql
+        - ^rabbitmq
+      tls_enabled: true
+      virt_type: qemu

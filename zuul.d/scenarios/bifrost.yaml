@@ -1,0 +1,38 @@
+---
+- job:
+    name: kolla-ansible-bifrost-base
+    parent: kolla-ansible-base
+    voting: false
+    files: !inherit
+      - ^ansible/group_vars/all/bifrost.yml
+      - ^ansible/roles/bifrost/
+      - ^roles/kolla-ansible-(deploy|test|upgrade)-bifrost/
+    vars:
+      scenario: bifrost
+      scenario_images_core:
+        - ^bifrost
+
+- job:
+    name: kolla-ansible-debian-trixie-bifrost
+    parent: kolla-ansible-bifrost-base
+    nodeset: kolla-ansible-debian-trixie-8GB
+
+- job:
+    name: kolla-ansible-rocky-10-bifrost
+    parent: kolla-ansible-bifrost-base
+    nodeset: kolla-ansible-rocky-10-8GB
+
+- job:
+    name: kolla-ansible-ubuntu-noble-bifrost
+    parent: kolla-ansible-bifrost-base
+    nodeset: kolla-ansible-ubuntu-noble-8GB
+
+- project-template:
+    name: kolla-ansible-scenario-bifrost
+    description: |
+      Runs Kolla-Ansible Bifrost scenario jobs.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie-bifrost
+        - kolla-ansible-rocky-10-bifrost
+        - kolla-ansible-ubuntu-noble-bifrost

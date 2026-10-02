@@ -1,24 +1,22 @@
 ---
-- include_tasks: register.yml
-  when: inventory_hostname in groups['designate-api']
+- name: Register designate in Keystone
+  ansible.builtin.import_tasks: register.yml
 
-- include_tasks: config.yml
-  when: inventory_hostname in groups['designate-api'] or
-        inventory_hostname in groups['designate-central'] or
-        inventory_hostname in groups['designate-producer'] or
-        inventory_hostname in groups['designate-mdns'] or
-        inventory_hostname in groups['designate-worker'] or
-        inventory_hostname in groups['designate-sink'] or
-        inventory_hostname in groups['designate-backend-bind9']
+- name: Configure designate
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: clone.yml
+- name: Check designate containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone designate repository
+  ansible.builtin.include_tasks: clone.yml
   when: designate_dev_mode | bool
 
-- include_tasks: bootstrap.yml
-  when: inventory_hostname in groups['designate-central']
+- name: Bootstrap designate service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers
 
-- include_tasks: update_pools.yml
-  when: inventory_hostname in groups['designate-worker'][0]
+- name: Import tasks from update_pools.yml
+  ansible.builtin.import_tasks: update_pools.yml

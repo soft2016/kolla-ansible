@@ -1,0 +1,48 @@
+---
+- name: "Check containers with iteration for {{ kolla_role_name | default(project_name) }}"
+  become: true
+  vars:
+    service: "{{ lookup('vars', (kolla_role_name | default(project_name)) + '_services')[service_name] }}"
+  kolla_container:
+    action: "compare_container"
+    common_options: "{{ docker_common_options }}"
+    name: "{{ service.container_name }}_{{ item }}"
+    image: "{{ service.image | default(omit) }}"
+    volumes: "{{ service.volumes | default(omit) }}"
+    dimensions: "{{ service.dimensions | default(omit) }}"
+    tmpfs: "{{ service.tmpfs | default(omit) }}"
+    volumes_from: "{{ service.volumes_from | default(omit) }}"
+    privileged: "{{ service.privileged | default(omit) }}"
+    cap_add: "{{ service.cap_add | default(omit) }}"
+    environment: "{{ service.environment | default(omit) }}"
+    healthcheck: "{{ service.healthcheck | default(omit) }}"
+    ipc_mode: "{{ service.ipc_mode | default(omit) }}"
+    pid_mode: "{{ service.pid_mode | default(omit) }}"
+    security_opt: "{{ service.security_opt | default(omit) }}"
+    labels: "{{ service.labels | default(omit) }}"
+    command: "{{ service.command | default(omit) }}"
+    cgroupns_mode: "{{ service.cgroupns_mode | default(omit) }}"
+  loop: "{{ range(1, (iterate_count | int) + 1) | list }}"
+  when:
+    # NOTE(dougszu): Due to issues with nova-compute-ironic HA, we can't have
+    # more than one instance for a given 'item'. Eg. nova_compute_ironic_1
+    # should never run on more than one host.
+    # See: https://specs.openstack.org/openstack/nova-specs/specs/2024.1/implemented/ironic-shards.html
+    - service_name != 'nova-compute-ironic' or inventory_hostname in groups[nova_cell_compute_ironic_group ~ '-' ~ item]
+  register: container_check
+
+- name: "Store changed containers to pass to the handler"
+  ansible.builtin.set_fact:
+    "{{ service_name | replace('-', '_') }}_changed_containers": "{{ container_check.results | selectattr('changed') | default([]) }}"
+
+# NOTE(yoctozepto): Must be a separate task because one cannot see the whole
+# result in the previous task and Ansible has a quirk regarding notifiers.
+# For details see https://github.com/ansible/ansible/issues/22579
+- name: "Notify handlers to restart containers for {{ kolla_role_name | default(project_name) }}"
+  vars:
+    handler: "{{ ['Restart ' + outer_item.key + ' container'] if changed_containers | length > 0 else [] }}"
+    changed_containers: "{{ lookup('vars', service_name | replace('-', '_') + '_changed_containers') }}"
+  ansible.builtin.debug:
+    msg: "{{ ('Notifying handlers: ' + handler | join(',')) if changed_containers | length > 0 else 'Nothing changed - not notifying handlers' }}"
+  changed_when: changed_containers | length > 0
+  notify: "{{ handler }}"

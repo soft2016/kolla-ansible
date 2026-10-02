@@ -1,0 +1,4 @@
+---
+- name: "Include tasks for action {{ kolla_action }}"
+  ansible.builtin.include_tasks: "{{ kolla_action }}.yml"
+  when: inventory_hostname in groups['loadbalancer']

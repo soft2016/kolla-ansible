@@ -1,0 +1,7 @@
+---
+- name: Stop cinder containers
+  ansible.builtin.import_role:
+    name: service-stop
+  vars:
+    project_services: "{{ cinder_services }}"
+    service_name: "{{ project_name }}"

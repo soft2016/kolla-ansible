@@ -1,5 +1,5 @@
 {
-    "command": "/usr/sbin/grafana-server --config=/etc/grafana/grafana.ini",
+    "command": "/usr/sbin/grafana server --config=/etc/grafana/grafana.ini",
     "config_files": [
         {
             "source": "{{ container_config_directory }}/grafana.ini",
@@ -7,37 +7,76 @@
             "owner": "grafana",
             "perm": "0600"
         },
-{% if check_extra_conf_grafana is defined %}{% if check_extra_conf_grafana.matched > 0 %}{% for plugin in check_extra_conf_grafana.files %}
+{% if check_extra_conf_grafana is defined %}
+{%     for extra_conf in check_extra_conf_grafana.files | map(attribute='path') | map('basename') %}
         {
-            "source": "{{ container_config_directory }}/{{ plugin.path | basename }}",
-            "dest": "/etc/grafana/{{ plugin.path | basename }}",
-            "owner": "grafana",
-            "perm": "0600"
-        },
-{% endfor %}{% endif %}{% endif %}
-        {
-            "source": "{{ container_config_directory }}/grafana_home_dashboard.json",
+            "source": "{{ container_config_directory }}/{{ extra_conf }}",
+{%         if extra_conf == 'grafana_home_dashboard.json' %}
             "dest": "/usr/share/grafana/public/dashboards/home.json",
             "owner": "root",
-            "perm": "0644",
-            "optional": true
+            "perm": "0644"
+{%         else %}
+            "dest": "/etc/grafana/{{ extra_conf }}",
+            "owner": "grafana",
+            "perm": "0600"
+{%         endif %}
         },
+{%     endfor %}
+{% endif %}
         {
             "source": "{{ container_config_directory }}/prometheus.yaml",
             "dest": "/etc/grafana/provisioning/datasources/prometheus.yaml",
             "owner": "root",
             "perm": "0644",
             "optional": true
+        },
+        {
+            "source": "{{ container_config_directory }}/provisioning.yaml",
+            "dest": "/etc/grafana/provisioning/dashboards/provisioning.yaml",
+            "owner": "root",
+            "perm": "0644"
+        },
+        {
+            "source": "{{ container_config_directory }}/dashboards/",
+            "dest": "/var/lib/grafana/dashboards",
+            "owner": "grafana",
+            "perm": "0755",
+            "optional": true
+        }{% if grafana_ldap_enabled | bool %},
+        {
+            "source": "{{ container_config_directory }}/ldap.toml",
+            "dest": "/etc/grafana/ldap.toml",
+            "owner": "grafana",
+            "perm": "0600"
+        }{% endif %}
+        {% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/grafana",
+            "owner": "grafana:kolla",
+            "perm": "2775"
         }
     ],
     "permissions": [
         {
-            "path": "/var/lib/grafana",
-            "owner": "grafana:grafana",
-            "recurse": true
+            "path": "/var/log/kolla/grafana/*.log",
+            "owner": "grafana:kolla",
+            "perm": "0664"
         },
         {
-            "path": "/var/log/kolla/grafana",
+            "path": "/var/lib/grafana",
             "owner": "grafana:grafana",
             "recurse": true
         }

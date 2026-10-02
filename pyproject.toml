@@ -1,0 +1,68 @@
+[build-system]
+requires = ["pbr>=6.1.1"]
+build-backend = "pbr.build"
+
+[project]
+name = "kolla-ansible"
+description = "Ansible Deployment of Kolla containers"
+authors = [
+    {name = "OpenStack", email = "openstack-discuss@lists.openstack.org"},
+]
+readme = {file = "README.rst", content-type = "text/x-rst"}
+license = "Apache-2.0"
+dynamic = ["version", "dependencies"]
+requires-python = ">=3.12"
+classifiers = [
+    "Environment :: OpenStack",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14"
+]
+
+[project.urls]
+Homepage = "https://docs.openstack.org/kolla-ansible/latest/"
+
+[project.scripts]
+kolla-ansible = "kolla_ansible.cmd.kolla_ansible:main"
+kolla-genpwd = "kolla_ansible.cmd.genpwd:main"
+kolla-mergepwd = "kolla_ansible.cmd.mergepwd:main"
+kolla-readpwd = "kolla_ansible.cmd.readpwd:main"
+kolla-writepwd = "kolla_ansible.cmd.writepwd:main"
+
+[project.entry-points."kolla_ansible.cli"]
+bootstrap-servers = "kolla_ansible.cli.commands:BootstrapServers"
+certificates = "kolla_ansible.cli.commands:Certificates"
+check = "kolla_ansible.cli.commands:Check"
+deploy = "kolla_ansible.cli.commands:Deploy"
+deploy-bifrost = "kolla_ansible.cli.commands:BifrostDeploy"
+deploy-containers = "kolla_ansible.cli.commands:DeployContainers"
+deploy-servers = "kolla_ansible.cli.commands:BifrostDeployServers"
+destroy = "kolla_ansible.cli.commands:Destroy"
+gather-facts = "kolla_ansible.cli.commands:GatherFacts"
+genconfig = "kolla_ansible.cli.commands:GenConfig"
+install-deps = "kolla_ansible.cli.commands:InstallDeps"
+mariadb-backup = "kolla_ansible.cli.commands:MariaDBBackup"
+mariadb-recovery = "kolla_ansible.cli.commands:MariaDBRecovery"
+migrate-container-engine = "kolla_ansible.cli.commands:MigrateContainerEngine"
+nova-libvirt-cleanup = "kolla_ansible.cli.commands:NovaLibvirtCleanup"
+octavia-certificates = "kolla_ansible.cli.commands:OctaviaCertificates"
+post-deploy = "kolla_ansible.cli.commands:Postdeploy"
+prechecks = "kolla_ansible.cli.commands:Prechecks"
+prune-images = "kolla_ansible.cli.commands:PruneImages"
+pull = "kolla_ansible.cli.commands:Pull"
+rabbitmq-reset-state = "kolla_ansible.cli.commands:RabbitMQResetState"
+reconfigure = "kolla_ansible.cli.commands:Reconfigure"
+stop = "kolla_ansible.cli.commands:Stop"
+upgrade = "kolla_ansible.cli.commands:Upgrade"
+upgrade-bifrost = "kolla_ansible.cli.commands:BifrostUpgrade"
+validate-config = "kolla_ansible.cli.commands:ValidateConfig"
+
+[tool.setuptools.packages.find]
+include = ["kolla_ansible*"]

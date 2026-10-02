@@ -1,3 +1,4 @@
 ---
 # TODO(Jeffrey4l): fix idempotent
-- include_tasks: bootstrap_service.yml
+- name: Run ceilometer bootstrap container
+  ansible.builtin.import_tasks: bootstrap_service.yml

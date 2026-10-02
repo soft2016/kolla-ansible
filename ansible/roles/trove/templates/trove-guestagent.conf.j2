@@ -1,0 +1,30 @@
+[DEFAULT]
+log_file = trove-guestagent.log
+log_dir = /var/log/trove/
+transport_url = {{ rpc_transport_url }}
+control_exchange = trove
+root_grant = ALL
+root_grant_option = true
+debug = {{ trove_logging_debug }}
+
+[service_credentials]
+auth_url = {{ keystone_internal_url }}
+region_name = {{ openstack_region_name }}
+project_name = service
+password = {{ trove_keystone_password }}
+project_domain_name = {{ default_project_domain_name }}
+user_domain_name = {{ default_user_domain_name }}
+username = {{ trove_keystone_user }}
+
+[oslo_messaging_rabbit]
+use_queue_manager = true
+heartbeat_in_pthread = false
+rabbit_quorum_queue = true
+{% if om_enable_rabbitmq_stream_fanout | bool %}
+rabbit_stream_fanout = true
+rabbit_qos_prefetch_count = {{ om_rabbitmq_qos_prefetch_count }}
+{% endif %}
+rabbit_transient_quorum_queue = true
+
+[oslo_concurrency]
+lock_path = /var/lib/trove/tmp

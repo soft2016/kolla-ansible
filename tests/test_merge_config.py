@@ -13,22 +13,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import imp
+from importlib.machinery import SourceFileLoader
 import os
-import sys
+import tempfile
 
-import mock
+from io import StringIO
+
+from ansible.parsing.dataloader import DataLoader
+from ansible.template import Templar
 from oslotest import base
-from six import StringIO
 
 
 PROJECT_DIR = os.path.abspath(os.path.join(os. path.dirname(__file__), '../'))
 MERGE_CONFIG_FILE = os.path.join(PROJECT_DIR,
                                  'ansible/action_plugins/merge_configs.py')
 
-sys.modules['ansible.plugins'] = mock.MagicMock()
 
-merge_configs = imp.load_source('merge_configs', MERGE_CONFIG_FILE)
+merge_configs = SourceFileLoader('merge_configs',
+                                 MERGE_CONFIG_FILE).load_module()
 
 TESTA = '''[DEFAULT]
 key1 = b
@@ -135,6 +137,29 @@ key2 = not_b
 
 '''
 
+# TESTC_NO_WHITESPACE is TESTA + TESTB without whitespace around equal signs
+TESTC_NO_WHITESPACE = '''[DEFAULT]
+key1=b
+     c
+key2=v3
+     v4
+     v5
+key3=v3
+key3=v4
+key4=v4
+key4=
+
+[b]
+b_key1=1
+b_key2=2
+
+[c]
+c_key1=
+c_key2=1 2 3
+       4 5 6
+
+'''
+
 
 class OverrideConfigParserTest(base.BaseTestCase):
 
@@ -180,4 +205,50 @@ class OverrideConfigParserTest(base.BaseTestCase):
         output = StringIO()
         parser.write(output)
         self.assertEqual(TESTC_NO_DEFAULT_SECTION, output.getvalue())
+        output.close()
+
+    def test_merge_no_whitespace(self):
+        parser = merge_configs.OverrideConfigParser(whitespace=False)
+        parser.parse(StringIO(TESTA))
+        parser.parse(StringIO(TESTB))
+        output = StringIO()
+        parser.write(output)
+        self.assertEqual(TESTC_NO_WHITESPACE, output.getvalue())
+        output.close()
+
+    def test_read_config_lstrip_blocks(self):
+        # An indented Jinja2 block tag on its own line must not leak its
+        # leading whitespace into the following line, or the line gets
+        # parsed as a continuation of the previous key's value instead of
+        # a new key.
+        content = (
+            "[DEFAULT]\n"
+            "key1 = value1\n"
+            "  {% if true %}\n"
+            "key2 = value2\n"
+            "  {% endif %}\n"
+            "key3 = value3\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = os.path.join(tmpdir, 'source.conf')
+            with open(source, 'w') as f:
+                f.write(content)
+
+            loader = DataLoader()
+            loader.set_basedir(tmpdir)
+            action = object.__new__(merge_configs.ActionModule)
+            action._loader = loader
+            action._templar = Templar(loader=loader)
+
+            config = merge_configs.OverrideConfigParser()
+            action.read_config(source, config)
+
+        output = StringIO()
+        config.write(output)
+        self.assertEqual(
+            "[DEFAULT]\n"
+            "key1 = value1\n"
+            "key2 = value2\n"
+            "key3 = value3\n\n",
+            output.getvalue())
         output.close()

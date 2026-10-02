@@ -1,0 +1,7 @@
+---
+fixes:
+  - |
+    Fixes haproxy configurations that kept rendering the ``acme_client_back``
+    backend and the ``path_reg ^/.well-known/acme-challenge/.+`` ACL even when
+    Let's Encrypt support was disabled.
+    `LP#2097452 <https://launchpad.net/bugs/2097452>`__

@@ -119,13 +119,6 @@ bifrost image.
         cd kolla
         tox -e genconfig
 
-   * Modify ``kolla-build.conf``, setting ``install_type`` to ``source``:
-
-     .. path etc/kolla/kolla-build.conf
-     .. code-block:: ini
-
-        install_type = source
-
 Alternatively, instead of using ``kolla-build.conf``, a ``source`` build can
 be enabled by appending ``--type source`` to the :command:`kolla-build` or
 ``tools/build.py`` command.
@@ -145,13 +138,13 @@ be enabled by appending ``--type source`` to the :command:`kolla-build` or
 
    .. note::
 
-      By default :command:`kolla-build` will build all containers using CentOS as
+      By default :command:`kolla-build` will build all containers using Rocky as
       the base image. To change this behavior, use the following parameter with
       :command:`kolla-build` or ``tools/build.py`` command:
 
       .. code-block:: console
 
-         --base [ubuntu|centos|oraclelinux]
+         --base [debian|rocky|ubuntu]
 
 Configure and Deploy a Bifrost Container
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -159,7 +152,7 @@ Configure and Deploy a Bifrost Container
 This section provides instructions for how to configure and deploy a container
 running bifrost services.
 
-Prepare Kolla-Ansible Inventory
+Prepare Kolla Ansible Inventory
 -------------------------------
 
 Kolla-ansible will deploy bifrost on the hosts in the ``bifrost`` Ansible
@@ -177,7 +170,7 @@ services deployed by kolla including OpenStack Ironic, MariaDB, RabbitMQ and
 (optionally) OpenStack Keystone.  These services should not be deployed on the
 host on which bifrost is deployed.
 
-Prepare Kolla-Ansible Configuration
+Prepare Kolla Ansible Configuration
 -----------------------------------
 
 Follow the instructions in :doc:`../../user/quickstart` to prepare
@@ -192,13 +185,6 @@ different than ``network_interface``.  For example to use ``eth1``:
 
 Note that this interface should typically have L2 network connectivity with the
 bare metal cloud hosts in order to provide DHCP leases with PXE boot options.
-
-Since bifrost only supports the source image type, ensure that this is
-reflected in ``globals.yml``
-
-.. code-block:: yaml
-
-   kolla_install_type: source
 
 Prepare Bifrost Configuration
 -----------------------------
@@ -291,20 +277,22 @@ Deploy Bifrost
 
 The bifrost container can be deployed either using kolla-ansible or manually.
 
-Deploy Bifrost using Kolla-Ansible
+Deploy Bifrost using Kolla Ansible
 ----------------------------------
 
 For development:
 
 .. code-block:: console
 
-   cd kolla-ansible
-   tools/kolla-ansible deploy-bifrost
+   pip install -e ./kolla-ansible
+   kolla-ansible deploy-bifrost
+
 
 For Production:
 
 .. code-block:: console
 
+   pip install -U ./kolla-ansible
    kolla-ansible deploy-bifrost
 
 Deploy Bifrost manually
@@ -345,7 +333,7 @@ Deploy Bifrost manually
 
       cd /bifrost
       ./scripts/env-setup.sh
-      . env-vars
+      export OS_CLOUD=bifrost
       cat > /etc/rabbitmq/rabbitmq-env.conf << EOF
       HOME=/var/lib/rabbitmq
       EOF
@@ -363,7 +351,7 @@ Validate the Deployed Container
 
    docker exec -it bifrost_deploy bash
    cd /bifrost
-   . env-vars
+   export OS_CLOUD=bifrost
 
 Running "ironic node-list" should return with no nodes, for example
 
@@ -382,7 +370,7 @@ Once we have deployed a bifrost container we can use it to provision the bare
 metal cloud hosts specified in the inventory file. Again, this can be done
 either using kolla-ansible or manually.
 
-By Kolla-Ansible
+By Kolla Ansible
 ----------------
 
 For Development:
@@ -390,12 +378,14 @@ For Development:
 
 .. code-block:: console
 
-   tools/kolla-ansible deploy-servers
+   pip install -e ./kolla-ansible
+   kolla-ansible deploy-servers
 
 For Production:
 
 .. code-block:: console
 
+   pip install -U ./kolla-ansible
    kolla-ansible deploy-servers
 
 Manually
@@ -405,7 +395,7 @@ Manually
 
    docker exec -it bifrost_deploy bash
    cd /bifrost
-   . env-vars
+   export OS_CLOUD=bifrost
    export BIFROST_INVENTORY_SOURCE=/etc/bifrost/servers.yml
    ansible-playbook -vvvv \
    -i /bifrost/playbooks/inventory/bifrost_inventory.py \
@@ -415,7 +405,7 @@ Manually
 
    docker exec -it bifrost_deploy bash
    cd /bifrost
-   . env-vars
+   export OS_CLOUD=bifrost
    export BIFROST_INVENTORY_SOURCE=/etc/bifrost/servers.yml
    ansible-playbook -vvvv \
    -i /bifrost/playbooks/inventory/bifrost_inventory.py \
@@ -458,9 +448,9 @@ done remotely with :command:`ipmitool` and Serial Over LAN. For example
 References
 ~~~~~~~~~~
 
-* `Bifrost documentation <https://docs.openstack.org/bifrost/latest/>`__
+* :bifrost-doc:`Bifrost documentation <>`
 
-* `Bifrost troubleshooting guide <https://docs.openstack.org/bifrost/latest/user/troubleshooting.html>`__
+* :bifrost-doc:`Bifrost troubleshooting guide <user/troubleshooting.html>`
 
 * `Bifrost code repository <https://github.com/openstack/bifrost>`__
 

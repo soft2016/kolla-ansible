@@ -12,13 +12,31 @@
             "dest": "/etc/designate/{{ designate_policy_file }}",
             "owner": "designate",
             "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
         }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/designate",
+            "owner": "designate:kolla",
+            "perm": "2775"
+        }
     ],
     "permissions": [
         {
-            "path": "/var/log/kolla/designate",
-            "owner": "designate:designate",
-            "recurse": true
+            "path": "/var/log/kolla/designate/*.log",
+            "owner": "designate:kolla",
+            "perm": "0664"
         }
     ]
 }

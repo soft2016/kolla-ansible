@@ -3,12 +3,43 @@
   vars:
     logs_dir: "/tmp/logs"
   tasks:
+    - name: Attach Tempest report artifact
+      ansible.builtin.import_role:
+        name: fetch-subunit-output
+      vars:
+          fetch_subunit_output_artifact_name: "Tempest report"
+          zuul_work_dir: '/home/zuul/tempest'
+
+    # TODO(mhiner): Currently only Docker to Podman migration is tested.
+    # If we want to test the other direction we have to rework this.
+    - name: Change container engine after the migration
+      set_fact:
+        container_engine: "podman"
+      when: scenario == "container-engine-migration"
+
     - name: Print all facts
       copy:
         content: "{{ hostvars[inventory_hostname] | to_nice_json }}"
         dest: "{{ logs_dir }}/facts.json"
 
+    # NOTE(yoctozepto): this might not have been run during the
+    # regular run due to some earlier failure, yet logs content may
+    # still provide insight into that other, breaking issue
+    - name: Run check-logs.sh script
+      script: check-logs.sh
+      failed_when: false
+      when: not zuul_success | bool
+      register: check_logs_result
+
+    - name: Print check-logs output
+      debug:
+        msg: "{{ check_logs_result.stdout }}"
+      when: not check_logs_result.skipped | default(False)
+
     - name: Run diagnostics script
+      environment:
+        CONTAINER_ENGINE: "{{ container_engine }}"
+        KOLLA_INTERNAL_VIP_ADDRESS: "{{ kolla_internal_vip_address }}"
       script: get_logs.sh
       register: get_logs_result
       become: true
@@ -21,40 +52,92 @@
     - name: Download /etc/hosts file to executor
       synchronize:
         src: "/etc/hosts"
-        dest: "{{ zuul.executor.log_root }}/{{inventory_hostname }}/"
+        dest: "{{ zuul.executor.log_root }}/{{ inventory_hostname }}/"
         mode: pull
       ignore_errors: yes
 
-    - name: dump all iptables rules
+    - name: Dump all iptables rules
       shell: "iptables-save > /tmp/logs/iptables"
+      args:
+        creates: /tmp/logs/iptables
       become: true
 
     - name: Download /tmp/logs file to executor
       synchronize:
         src: "/tmp/logs"
-        dest: "{{ zuul.executor.log_root }}/{{inventory_hostname }}/"
+        dest: "{{ zuul.executor.log_root }}/{{ inventory_hostname }}/"
         mode: pull
         rsync_opts:
           - "--quiet"
 
 - hosts: primary
+  environment:
+    PATH: >-
+      {{ ansible_env.HOME + '/kolla-ansible-venv/bin:'
+      + ansible_env.PATH }}
+  vars:
+    ara_report_local_dir: "{{ zuul.executor.log_root }}/{{ inventory_hostname }}/ara-report"
+    kolla_ansible_local_src_dir: "{{ zuul.executor.work_root }}/src/{{ zuul.project.canonical_hostname }}/openstack/kolla-ansible"
   tasks:
-    - name: check for existence of ara sqlite
+    - name: Download testinfra to executor
+      synchronize:
+        src: "/home/zuul/testinfra"
+        dest: "{{ zuul.executor.log_root }}/"
+        mode: pull
+      # TODO(mnasiadka): Remove in G/2026.1 cycle
+      ignore_errors: true
+
+    - name: Return artifact to Zuul
+      zuul_return:
+        data:
+          zuul:
+            artifacts:
+              - name: "TestInfra Unit Test Report"
+                url: "testinfra/test-results-testinfra.html"
+                metadata:
+                  type: unit_test_report
+              - name: "TestInfra Screenshots"
+                url: "testinfra/screenshots"
+
+    - name: Check for existence of ara sqlite
       stat:
-        path: "{{ ansible_env.HOME }}/.ara/ansible.sqlite"
+        path: "{{ ansible_env.HOME }}/.ara/server/ansible.sqlite"
       register: ara_stat_result
 
     - block:
-        - name: ensure ara-report folder existence
+        - name: Ensure ara-report folder existence
           file:
-            path: "{{ zuul.executor.log_root }}/{{ inventory_hostname }}/ara-report"
+            path: "{{ ara_report_local_dir }}"
             state: directory
           delegate_to: localhost
-          run_once: true
 
-        - name: download ara sqlite
+        - name: Download ara sqlite
           synchronize:
-            src: "{{ ansible_env.HOME }}/.ara/ansible.sqlite"
-            dest: "{{ zuul.executor.log_root }}/{{ inventory_hostname }}/ara-report/"
+            src: "{{ ansible_env.HOME }}/.ara/server/ansible.sqlite"
+            dest: "{{ ara_report_local_dir }}/"
             mode: pull
+
+        - name: Get ara version
+          command: "ara --version"
+          register: ara_version
+
+        - name: Template ara readme
+          template:
+            src: "{{ kolla_ansible_local_src_dir }}/tests/ara-readme.md.j2"
+            dest: "{{ ara_report_local_dir }}/README.md"
+            mode: '0644'
+          delegate_to: localhost
+
+        - name: Generate HTML from ARA database
+          command: "ara-manage generate {{ ansible_env.HOME }}/ara-html"
+          when: (zuul.change_message | default('')) is search('#ara_verbose')
+
+        - name: Download ARA HTML
+          synchronize:
+            src: "{{ ansible_env.HOME }}/ara-html"
+            dest: "{{ ara_report_local_dir }}/"
+            mode: pull
+            rsync_opts:
+              - "--quiet"
+          when: (zuul.change_message | default('')) is search('#ara_verbose')
       when: ara_stat_result.stat.exists

@@ -1,0 +1,37 @@
+---
+- job:
+    name: kolla-ansible-kvm-base
+    parent: kolla-ansible-base
+    voting: false
+    files: !inherit
+      - ^ansible/group_vars/all/(nova|nova-cell).yml
+      - ^ansible/roles/nova/
+      - ^ansible/roles/nova-cell/
+      - ^tests/templates/nova-compute-overrides.j2
+    vars:
+      virt_type: kvm
+
+- job:
+    name: kolla-ansible-debian-trixie-kvm
+    parent: kolla-ansible-kvm-base
+    nodeset: kolla-ansible-debian-trixie-nested-virt
+
+- job:
+    name: kolla-ansible-rocky-10-kvm
+    parent: kolla-ansible-kvm-base
+    nodeset: kolla-ansible-rocky-10-8GB
+
+- job:
+    name: kolla-ansible-ubuntu-noble-kvm
+    parent: kolla-ansible-kvm-base
+    nodeset: kolla-ansible-ubuntu-noble-nested-virt
+
+- project-template:
+    name: kolla-ansible-scenario-kvm
+    description: |
+      Runs Kolla-Ansible KVM scenario jobs.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie-kvm
+        - kolla-ansible-rocky-10-kvm
+        - kolla-ansible-ubuntu-noble-kvm

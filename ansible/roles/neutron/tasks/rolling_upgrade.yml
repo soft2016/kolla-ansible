@@ -1,9 +1,15 @@
 ---
-- include_tasks: pull.yml
+- name: Import tasks from config-host.yml
+  ansible.builtin.import_tasks: config-host.yml
 
-- include_tasks: config.yml
+- name: Import tasks from config.yml
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: config-neutron-fake.yml
+- name: Import tasks from check-containers.yml
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Include tasks from config-neutron-fake.yml
+  ansible.builtin.include_tasks: config-neutron-fake.yml
   when:
     - inventory_hostname in groups['compute']
     - enable_nova_fake | bool
@@ -11,81 +17,78 @@
 - name: Running Neutron database expand container
   vars:
     neutron_server: "{{ neutron_services['neutron-server'] }}"
-  kolla_docker:
+  become: true
+  kolla_container:
     action: "start_container"
     common_options: "{{ docker_common_options }}"
-    detach: False
+    detach: false
     environment:
       KOLLA_UPGRADE:
       NEUTRON_DB_EXPAND:
       KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
-      NEUTRON_ROLLING_UPGRADE_SERVICES: "{{ neutron_rolling_upgrade_services }}"
+      NEUTRON_ROLLING_UPGRADE_SERVICES: "{{ neutron_rolling_upgrade_services | join(' ') }}"
     image: "{{ neutron_server.image }}"
     labels:
       UPGRADE:
     name: "bootstrap_neutron"
-    restart_policy: "never"
+    restart_policy: oneshot
     volumes: "{{ neutron_server.volumes }}"
-  run_once: True
+  run_once: true
   delegate_to: "{{ groups['neutron-server'][0] }}"
 
-- include_tasks: bootstrap_service.yml
-  vars:
-    neutron_lbaas_agent: "{{ neutron_services['neutron-lbaas-agent'] }}"
-    neutron_server: "{{ neutron_services['neutron-server'] }}"
-  when: (neutron_lbaas_agent.enabled | bool)
-        or (enable_neutron_sfc | bool and neutron_server.enabled | bool)
-
 - name: Flush Handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers
 
 - name: Checking neutron pending contract scripts
   become: true
-  command: "docker exec -t neutron_server neutron-db-manage --subproject {{ item }} has_offline_migrations"
+  changed_when: false
+  ansible.builtin.command: "{{ kolla_container_engine }} exec -t neutron_server neutron-db-manage --subproject {{ item }} has_offline_migrations"
   register: neutron_check_contract_db_stdout
-  ignore_errors: yes
+  ignore_errors: true
   with_items: "{{ neutron_rolling_upgrade_services }}"
   when: inventory_hostname == groups['neutron-server'][0]
 
 - name: Stopping all neutron-server for contract db
   vars:
-    neutron_server: "{{ neutron_services['neutron-server'] }}"
-    first_neutron_server_host: "{{ groups[neutron_server.group][0] }}"
+    service: "{{ neutron_services['neutron-server'] }}"
+    first_neutron_server_host: "{{ groups[service.group][0] }}"
     results_of_check_pending_contract_scripts: "{{ hostvars[first_neutron_server_host]['neutron_check_contract_db_stdout'] }}"
+    # NOTE(hrw): no idea
     filter_rc: "results[?rc!=`0`]"
     is_stop_neutron_server: "{{ results_of_check_pending_contract_scripts | json_query(filter_rc) }}"
   become: true
-  kolla_docker:
+  kolla_container:
     action: "stop_container"
     common_options: "{{ docker_common_options }}"
-    name: "{{ neutron_server.container_name }}"
+    name: "{{ service.container_name }}"
   when:
-    - is_stop_neutron_server|length > 0
-    - neutron_server.host_in_groups | bool
+    - service.host_in_groups | bool
+    - is_stop_neutron_server | length > 0
   notify:
     - "Restart neutron-server container"
 
 - name: Running Neutron database contract container
   vars:
     neutron_server: "{{ neutron_services['neutron-server'] }}"
-  kolla_docker:
+  become: true
+  kolla_container:
     action: "start_container"
     common_options: "{{ docker_common_options }}"
-    detach: False
+    detach: false
     environment:
       KOLLA_UPGRADE:
       NEUTRON_DB_CONTRACT:
       KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
-      NEUTRON_ROLLING_UPGRADE_SERVICES: "{{ neutron_rolling_upgrade_services }}"
+      NEUTRON_ROLLING_UPGRADE_SERVICES: "{{ neutron_rolling_upgrade_services | join(' ') }}"
     image: "{{ neutron_server.image }}"
     labels:
       UPGRADE:
     name: "bootstrap_neutron"
-    restart_policy: "never"
+    restart_policy: oneshot
     volumes: "{{ neutron_server.volumes }}"
-  run_once: True
+  run_once: true
   delegate_to: "{{ groups['neutron-server'][0] }}"
 
 # Flush handlers here to ensure neutron-server containers are started
 - name: Flush Handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

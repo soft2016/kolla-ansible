@@ -12,13 +12,31 @@
             "dest": "/etc/aodh/{{ aodh_policy_file }}",
             "owner": "aodh",
             "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
         }{% endif %}
     ],
-    "permissions": [
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
         {
             "path": "/var/log/kolla/aodh",
             "owner": "aodh:kolla",
-            "recurse": true
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/aodh/*.log",
+            "owner": "aodh:kolla",
+            "perm": "0664"
         }
     ]
 }

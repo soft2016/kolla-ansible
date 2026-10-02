@@ -1,6 +1,58 @@
 ---
-- include_tasks: rolling_upgrade.yml
-  when: ironic_enable_rolling_upgrade | bool
+- name: Wait for Ironic nodes not to wait
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: "openstack.cloud.baremetal_node_info"
+    module_args:
+      region_name: "{{ openstack_region_name }}"
+      auth: "{{ openstack_auth }}"
+      cloud: "{{ openstack_auth_cloud_system }}"
+      interface: "{{ openstack_interface }}"
+      cacert: "{{ openstack_cacert }}"
+  register: ironic_nodes
+  changed_when: false
+  retries: 10
+  delay: 30
+  until:
+    - ironic_nodes is success
+    - (ironic_nodes.nodes |
+       map(attribute='provision_state') |
+       select('search', '\\bwait\\b') |
+       length) == 0
+  run_once: true
+  when:
+    - not ironic_upgrade_skip_wait_check | bool
 
-- include_tasks: legacy_upgrade.yml
-  when: not ironic_enable_rolling_upgrade | bool
+- name: Import tasks from config.yml
+  ansible.builtin.import_tasks: config.yml
+
+- name: Import tasks from check-containers.yml
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Import tasks from bootstrap_service.yml
+  ansible.builtin.import_tasks: bootstrap_service.yml
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Running Ironic online data migration
+  vars:
+    ironic_api: "{{ ironic_services['ironic-api'] }}"
+  become: true
+  kolla_container:
+    action: "start_container"
+    common_options: "{{ docker_common_options }}"
+    detach: false
+    environment:
+      KOLLA_OSM:
+      KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+    image: "{{ ironic_api.image }}"
+    labels:
+      BOOTSTRAP:
+    name: "bootstrap_ironic"
+    restart_policy: oneshot
+    volumes: "{{ ironic_api.volumes }}"
+  run_once: true
+  delegate_to: "{{ groups[ironic_api.group][0] }}"
+  when: inventory_hostname in groups[ironic_api.group]

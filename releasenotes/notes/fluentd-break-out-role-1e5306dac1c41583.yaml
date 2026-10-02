@@ -1,0 +1,5 @@
+---
+upgrade:
+  - |
+    ``fluentd`` now has its own Ansible role instead of being deployed from the
+    ``common`` role.

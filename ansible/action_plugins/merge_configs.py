@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # Copyright 2015 Sam Yaple
 # Copyright 2017 99Cloud Inc.
 #
@@ -14,6 +12,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import collections
+import os
+import shutil
+import tempfile
+
+from ansible import constants
+from ansible.plugins import action
+from ansible.template import trust_as_template
+
+from io import StringIO
+
+from oslo_config import iniparser
+
+
+_ORPHAN_SECTION = 'TEMPORARY_ORPHAN_VARIABLE_SECTION'
 
 DOCUMENTATION = '''
 ---
@@ -33,6 +47,12 @@ options:
     default: None
     required: True
     type: str
+  whitespace:
+    description:
+      - Whether whitespace characters should be used around equal signs
+    default: True
+    required: False
+    type: bool
 author: Sam Yaple
 '''
 
@@ -51,27 +71,14 @@ Merge multiple configs:
           - "/etc/mysql/my.cnf"
 '''
 
-import collections
-import inspect
-import os
-import shutil
-import tempfile
-
-from ansible import constants
-from ansible.plugins import action
-from six import StringIO
-
-from oslo_config import iniparser
-
-_ORPHAN_SECTION = 'TEMPORARY_ORPHAN_VARIABLE_SECTION'
-
 
 class OverrideConfigParser(iniparser.BaseParser):
 
-    def __init__(self):
+    def __init__(self, whitespace=True):
         self._cur_sections = collections.OrderedDict()
         self._sections = collections.OrderedDict()
         self._cur_section = None
+        self._whitespace = ' ' if whitespace else ''
 
     def assignment(self, key, value):
         if self._cur_section is None:
@@ -108,12 +115,24 @@ class OverrideConfigParser(iniparser.BaseParser):
         def write_key_value(key, values):
             for v in values:
                 if not v:
-                    fp.write('{} =\n'.format(key))
+                    fp.write('{key}{ws}=\n'.format(
+                        key=key, ws=self._whitespace))
                 for index, value in enumerate(v):
                     if index == 0:
-                        fp.write('{} = {}\n'.format(key, value))
+                        fp.write('{key}{ws}={ws}{value}\n'.format(
+                            key=key,
+                            ws=self._whitespace,
+                            value=value))
                     else:
-                        fp.write('{}   {}\n'.format(len(key)*' ', value))
+                        # We want additional values to be written out under the
+                        # first value with the same indentation, like this:
+                        # key = value1
+                        #       value2
+                        indent_size = len(key) + len(self._whitespace) * 2 + 1
+                        ws_indent = ' ' * indent_size
+                        fp.write('{ws_indent}{value}\n'.format(
+                            ws_indent=ws_indent,
+                            value=value))
 
         def write_section(section):
             for key, values in section.items():
@@ -134,8 +153,20 @@ class ActionModule(action.ActionBase):
         # Only use config if present
         if os.access(source, os.R_OK):
             with open(source, 'r') as f:
-                template_data = f.read()
-            result = self._templar.template(template_data)
+                template_data = trust_as_template(f.read())
+
+            # set search path to mimic 'template' module behavior
+            searchpath = [
+                self._loader._basedir,
+                os.path.join(self._loader._basedir, 'templates'),
+                os.path.dirname(source),
+            ]
+            templar = self._templar.copy_with_new_env(searchpath=searchpath)
+
+            # lstrip_blocks avoids Jinja2 block tags (e.g. {% if %}) leaving
+            # behind leading whitespace that glues adjacent lines together.
+            result = templar.template(
+                template_data, overrides=dict(lstrip_blocks=True))
             fakefile = StringIO(result)
             config.parse(fakefile)
             fakefile.close()
@@ -143,24 +174,15 @@ class ActionModule(action.ActionBase):
     def run(self, tmp=None, task_vars=None):
 
         result = super(ActionModule, self).run(tmp, task_vars)
-
-        # NOTE(jeffrey4l): Ansible 2.1 add a remote_user param to the
-        # _make_tmp_path function.  inspect the number of the args here. In
-        # this way, ansible 2.0 and ansible 2.1 are both supported
-        make_tmp_path_args = inspect.getargspec(self._make_tmp_path)[0]
-        if not tmp and len(make_tmp_path_args) == 1:
-            tmp = self._make_tmp_path()
-        if not tmp and len(make_tmp_path_args) == 2:
-            remote_user = (task_vars.get('ansible_user')
-                           or self._play_context.remote_user)
-            tmp = self._make_tmp_path(remote_user)
+        del tmp  # not used
 
         sources = self._task.args.get('sources', None)
+        whitespace = self._task.args.get('whitespace', True)
 
         if not isinstance(sources, list):
             sources = [sources]
 
-        config = OverrideConfigParser()
+        config = OverrideConfigParser(whitespace=whitespace)
 
         for source in sources:
             self.read_config(source, config)
@@ -176,11 +198,12 @@ class ActionModule(action.ActionBase):
 
         try:
             result_file = os.path.join(local_tempdir, 'source')
-            with open(result_file, 'wb') as f:
+            with open(result_file, 'w') as f:
                 f.write(full_source)
 
             new_task = self._task.copy()
             new_task.args.pop('sources', None)
+            new_task.args.pop('whitespace', None)
 
             new_task.args.update(
                 dict(
@@ -196,7 +219,12 @@ class ActionModule(action.ActionBase):
                 loader=self._loader,
                 templar=self._templar,
                 shared_loader_obj=self._shared_loader_obj)
-            result.update(copy_action.run(task_vars=task_vars))
+            copy_result = copy_action.run(task_vars=task_vars)
+            if 'invocation' in copy_result:
+                copy_result['invocation']['module_args'].update({
+                    'src': result_file, 'sources': sources,
+                    'whitespace': whitespace})
+            result.update(copy_result)
         finally:
             shutil.rmtree(local_tempdir)
         return result

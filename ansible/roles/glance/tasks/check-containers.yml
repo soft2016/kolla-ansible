@@ -1,0 +1,4 @@
+---
+- name: Check glance containers
+  ansible.builtin.import_role:
+    name: service-check-containers

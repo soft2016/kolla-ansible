@@ -1,0 +1,3 @@
+---
+- name: Check kolla_toolbox containers
+  ansible.builtin.import_tasks: check-containers.yml

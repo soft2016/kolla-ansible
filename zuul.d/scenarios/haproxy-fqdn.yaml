@@ -1,0 +1,40 @@
+---
+- job:
+    name: kolla-ansible-haproxy-fqdn-base
+    parent: kolla-ansible-base
+    voting: false
+    files: !inherit
+      - ^ansible/group_vars/haproxy.yml
+      - ^ansible/roles/(haproxy-config|loadbalancer|loadbalancer-config)/
+      - ^kolla_ansible/kolla_url.py
+    vars:
+      external_api_interface_name: vxlan2
+      external_api_network_prefix: "192.0.3."
+      external_api_network_prefix_length: "24"
+      kolla_external_vip_address: "192.0.3.10"
+      scenario: haproxy
+
+- job:
+    name: kolla-ansible-debian-trixie-haproxy-fqdn
+    parent: kolla-ansible-haproxy-fqdn-base
+    nodeset: kolla-ansible-debian-trixie-8GB
+
+- job:
+    name: kolla-ansible-rocky-10-haproxy-fqdn
+    parent: kolla-ansible-haproxy-fqdn-base
+    nodeset: kolla-ansible-rocky-10-8GB
+
+- job:
+    name: kolla-ansible-ubuntu-noble-haproxy-fqdn
+    parent: kolla-ansible-haproxy-fqdn-base
+    nodeset: kolla-ansible-ubuntu-noble-8GB
+
+- project-template:
+    name: kolla-ansible-scenario-haproxy-fqdn
+    description: |
+      Runs Kolla-Ansible HAProxy FQDN scenario jobs.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie-haproxy-fqdn
+        - kolla-ansible-rocky-10-haproxy-fqdn
+        - kolla-ansible-ubuntu-noble-haproxy-fqdn

@@ -1,5 +1,12 @@
 ---
-- include_tasks: config.yml
+- name: Import tasks from config-host.yml
+  ansible.builtin.import_tasks: config-host.yml
+
+- name: Configure multipathd
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check multipathd containers
+  ansible.builtin.import_tasks: check-containers.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

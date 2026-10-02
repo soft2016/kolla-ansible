@@ -12,11 +12,11 @@ provides NFS Shared File Systems to OpenStack.
 
 Requirements
 ------------
-- Hitachi NAS Platform Models 3080, 3090, 4040, 4060, 4080, and 4100.
+* Hitachi NAS Platform Models 3080, 3090, 4040, 4060, 4080, and 4100.
 
-- HNAS/SMU software version is 12.2 or higher.
+* HNAS/SMU software version is 12.2 or higher.
 
-- HNAS configuration and management utilities to create a storage pool (span)
+* HNAS configuration and management utilities to create a storage pool (span)
   and an EVS.
 
   -  GUI (SMU).
@@ -30,27 +30,27 @@ The driver supports CIFS and NFS shares.
 
 The following operations are supported:
 
-- Create a share.
+* Create a share.
 
-- Delete a share.
+* Delete a share.
 
-- Allow share access.
+* Allow share access.
 
-- Deny share access.
+* Deny share access.
 
-- Create a snapshot.
+* Create a snapshot.
 
-- Delete a snapshot.
+* Delete a snapshot.
 
-- Create a share from a snapshot.
+* Create a share from a snapshot.
 
-- Extend a share.
+* Extend a share.
 
-- Shrink a share.
+* Shrink a share.
 
-- Manage a share.
+* Manage a share.
 
-- Unmanage a share.
+* Unmanage a share.
 
 
 Preparation and Deployment
@@ -77,8 +77,8 @@ Enable Shared File Systems service and HNAS driver in
 
 .. code-block:: yaml
 
-   enable_manila: "yes"
-   enable_manila_backend_hnas: "yes"
+   enable_manila: true
+   enable_manila_backend_hnas: true
 
 Configure the OpenStack networking so it can reach HNAS Management
 interface and HNAS EVS Data interface.
@@ -323,9 +323,8 @@ Modify the file ``/etc/kolla/config/manila-share.conf`` and add the contents:
    hitachi_hnas_file_system_name = FS-Manila2
 
 For more information about how to manage shares, see the
-`Manage shares
-<https://docs.openstack.org/manila/latest/user/create-and-manage-shares.html>`__.
+:manila-doc:`Manage shares <user/create-and-manage-shares.html>`.
 
 For more information about how HNAS driver works, see
-`Hitachi NAS Platform File Services Driver for OpenStack
-<https://docs.openstack.org/manila/latest/admin/hitachi_hnas_driver.html>`__.
+:manila-doc:`Hitachi NAS Platform File Services Driver for OpenStack
+<admin/hitachi_hnas_driver.html>`.

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 TOPLEVEL=$(git rev-parse --show-toplevel)
 RES=0
@@ -26,7 +26,7 @@ find . -type f
 
 echo "=== bashate checks ==="
 
-files=$(egrep -rlI '^#!/(bin/|usr/bin/env )(ba)?sh' .)
+files=$(grep -ErlI '^#!/(bin/|usr/bin/env )(ba)?sh' .)
 [ "$files" ] && (bashate $files || RES=1)
 
 echo "=== yaml checks ==="

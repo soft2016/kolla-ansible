@@ -1,0 +1,6 @@
+---
+upgrade:
+  - |
+    ``VMware`` drivers across Nova, Cinder, and Neutron are no longer deployed.
+    Upstream projects removed the integration and the third-party libraries are
+    unmaintained.

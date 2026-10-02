@@ -1,30 +1,24 @@
 ---
 - name: Ensuring config directories exist
-  file:
+  ansible.builtin.file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
     owner: "{{ config_owner_user }}"
     group: "{{ config_owner_group }}"
     mode: "0770"
   become: true
-  when:
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ glance_services }}"
+  with_dict: "{{ glance_services | select_services_enabled_and_mapped_to_host }}"
 
-- include_tasks: ceph.yml
+- name: Include tasks from external_ceph.yml
+  ansible.builtin.include_tasks: external_ceph.yml
   when:
-    - enable_ceph | bool
-    - glance_backend_ceph | bool
-
-- include_tasks: external_ceph.yml
-  when:
-    - enable_ceph | bool == False
     - glance_backend_ceph | bool
 
 - name: Check if policies shall be overwritten
-  local_action: stat path="{{ item }}"
-  run_once: True
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  delegate_to: localhost
+  run_once: true
   register: glance_policy
   with_first_found:
     - files: "{{ supported_policy_format_list }}"
@@ -33,52 +27,66 @@
       skip: true
 
 - name: Set glance policy file
-  set_fact:
+  ansible.builtin.set_fact:
     glance_policy_file: "{{ glance_policy.results.0.stat.path | basename }}"
     glance_policy_file_path: "{{ glance_policy.results.0.stat.path }}"
   when:
-    - glance_policy.results
+    - glance_policy.results | length > 0
+
+- name: Copying over TLS certificates
+  ansible.builtin.include_tasks: copy-certs.yml
+  when:
+    - glance_copy_certs | bool
 
 - name: Copying over config.json files for services
-  template:
+  ansible.builtin.template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
     mode: "0660"
   become: true
-  register: glance_config_jsons
-  when:
-    - item.value.enabled | bool
-    - inventory_hostname in groups[item.value.group]
-  with_dict: "{{ glance_services }}"
-  notify:
-    - Restart glance-api container
-    - Restart glance-registry container
+  with_dict: "{{ glance_services | select_services_enabled_and_mapped_to_host }}"
 
-- name: Copying over glance-*.conf
+- name: "Configure uWSGI for Glance"
+  ansible.builtin.include_role:
+    name: service-uwsgi-config
   vars:
-    service_name: "{{ item.key }}"
+    _glance_uwsgi_cacert_env:
+      REQUESTS_CA_BUNDLE: "{{ openstack_cacert }}"
+      SSL_CERT_FILE: "{{ openstack_cacert }}"
+    project_services: "{{ glance_services }}"
+    service: "{{ glance_services['glance-api'] }}"
+    service_name: "glance-api"
+    service_uwsgi_config_chunked_input_limit: "{{ '64M' | human_to_bytes }}"
+    service_uwsgi_config_env: "{{ _glance_uwsgi_cacert_env if kolla_enable_tls_internal else {} }}"
+    service_uwsgi_config_http_port: "{{ glance_api_listen_port }}"
+    service_uwsgi_config_log_file_chmod: "644"
+    service_uwsgi_config_module: "{{ service.wsgi }}"
+    service_uwsgi_config_tls_backend: "{{ glance_enable_tls_backend | bool }}"
+    service_uwsgi_config_tls_cert: "/etc/glance/certs/glance-cert.pem"
+    service_uwsgi_config_tls_key: "/etc/glance/certs/glance-key.pem"
+    service_uwsgi_config_workers: "{{ glance_api_workers }}"
+    service_uwsgi_config_uid: "glance"
+  when:
+    - service | service_enabled_and_mapped_to_host
+
+- name: Copying over glance-api.conf
+  vars:
+    service: "{{ glance_services['glance-api'] }}"
   merge_configs:
     sources:
-      - "{{ role_path }}/templates/{{ item.key }}.conf.j2"
+      - "{{ role_path }}/templates/glance-api.conf.j2"
       - "{{ node_custom_config }}/global.conf"
       - "{{ node_custom_config }}/glance.conf"
-      - "{{ node_custom_config }}/glance/{{ item.key }}.conf"
-      - "{{ node_custom_config }}/glance/{{ inventory_hostname }}/{{ item.key }}.conf"
-    dest: "{{ node_config_directory }}/{{ item.key }}/{{ item.key }}.conf"
+      - "{{ node_custom_config }}/glance/glance-api.conf"
+      - "{{ node_custom_config }}/glance/{{ inventory_hostname }}/glance-api.conf"
+    dest: "{{ node_config_directory }}/glance-api/glance-api.conf"
     mode: "0660"
   become: true
-  register: glance_confs
-  when:
-    - item.value.enabled | bool
-    - inventory_hostname in groups[item.value.group]
-  with_dict: "{{ glance_services }}"
-  notify:
-    - Restart glance-api container
-    - Restart glance-registry container
+  when: service | service_enabled_and_mapped_to_host
 
 - name: Copying over glance-cache.conf for glance_api
   vars:
-    glance_api: "{{ glance_services['glance-api'] }}"
+    service: "{{ glance_services['glance-api'] }}"
   merge_configs:
     sources:
       - "{{ role_path }}/templates/glance-cache.conf.j2"
@@ -88,66 +96,42 @@
     dest: "{{ node_config_directory }}/glance-api/glance-cache.conf"
     mode: "0660"
   become: true
-  register: glance_cache_conf
   when:
-    - glance_api.enabled | bool
-    - inventory_hostname in groups[glance_api.group]
+    - service | service_enabled_and_mapped_to_host
     - enable_glance_image_cache | bool
-  notify:
-    - Restart glance-api container
 
-- name: Copying over glance-swift.conf for glance_api
+- name: Copying over glance-image-import.conf
   vars:
-    glance_api: "{{ glance_services['glance-api'] }}"
-  merge_configs:
-    sources:
-      - "{{ role_path }}/templates/glance-swift.conf.j2"
-      - "{{ node_custom_config }}/glance-swift.conf"
-      - "{{ node_custom_config }}/glance/glance-swift.conf"
-      - "{{ node_custom_config }}/glance/{{ inventory_hostname }}/glance-swift.conf"
-    dest: "{{ node_config_directory }}/glance-api/glance-swift.conf"
+    service: "{{ glance_services['glance-api'] }}"
+  ansible.builtin.copy:
+    src: "{{ node_custom_config }}/glance/glance-image-import.conf"
+    dest: "{{ node_config_directory }}/glance-api/glance-image-import.conf"
     mode: "0660"
   become: true
-  register: glance_swift_conf
   when:
-    - glance_api.enabled | bool
-    - inventory_hostname in groups[glance_api.group]
-    - glance_backend_swift | bool
-  notify:
-    - Restart glance-api container
+    - service | service_enabled_and_mapped_to_host
+    - glance_enable_interoperable_image_import | bool
+
+- name: Copying over property-protections-rules.conf
+  vars:
+    service: "{{ glance_services['glance-api'] }}"
+  ansible.builtin.copy:
+    src: "{{ node_custom_config }}/glance/property-protections-rules.conf"
+    dest: "{{ node_config_directory }}/glance-api/property-protections-rules.conf"
+    mode: "0660"
+  become: true
+  when:
+    - service | service_enabled_and_mapped_to_host
+    - glance_enable_property_protection | bool
 
 - name: Copying over existing policy file
-  template:
+  vars:
+    service: "{{ glance_services['glance-api'] }}"
+  ansible.builtin.template:
     src: "{{ glance_policy_file_path }}"
-    dest: "{{ node_config_directory }}/{{ item.key }}/{{ glance_policy_file }}"
+    dest: "{{ node_config_directory }}/glance-api/{{ glance_policy_file }}"
     mode: "0660"
   become: true
-  register: glance_policy_overwriting
   when:
     - glance_policy_file is defined
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ glance_services }}"
-  notify:
-    - Restart glance-api container
-    - Restart glance-registry container
-
-- name: Check glance containers
-  become: true
-  kolla_docker:
-    action: "compare_container"
-    common_options: "{{ docker_common_options }}"
-    name: "{{ item.value.container_name }}"
-    image: "{{ item.value.image }}"
-    environment: "{{ item.value.environment | default(omit) }}"
-    volumes: "{{ item.value.volumes|reject('equalto', '')|list }}"
-    dimensions: "{{ item.value.dimensions }}"
-  register: check_glance_containers
-  when:
-    - kolla_action != "config"
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ glance_services }}"
-  notify:
-    - Restart glance-api container
-    - Restart glance-registry container
+    - service | service_enabled_and_mapped_to_host

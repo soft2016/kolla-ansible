@@ -1,0 +1,9 @@
+---
+- name: Configure valkey
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check valkey containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

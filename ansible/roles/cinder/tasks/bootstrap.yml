@@ -1,36 +1,41 @@
 ---
 - name: Creating Cinder database
+  become: true
   kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
     module_name: mysql_db
     module_args:
+      ca_cert: "{{ openstack_cacert if database_enable_tls_internal | bool else omit }}"
       login_host: "{{ database_address }}"
       login_port: "{{ database_port }}"
-      login_user: "{{ database_user }}"
+      login_user: "{{ cinder_database_shard_root_user }}"
       login_password: "{{ database_password }}"
       name: "{{ cinder_database_name }}"
-  register: database
-  run_once: True
+  run_once: true
   delegate_to: "{{ groups['cinder-api'][0] }}"
   when:
     - not use_preconfigured_databases | bool
 
 - name: Creating Cinder database user and setting permissions
+  become: true
   kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
     module_name: mysql_user
     module_args:
+      ca_cert: "{{ openstack_cacert if database_enable_tls_internal | bool else omit }}"
       login_host: "{{ database_address }}"
       login_port: "{{ database_port }}"
-      login_user: "{{ database_user }}"
+      login_user: "{{ cinder_database_shard_root_user }}"
       login_password: "{{ database_password }}"
       name: "{{ cinder_database_user }}"
       password: "{{ cinder_database_password }}"
       host: "%"
       priv: "{{ cinder_database_name }}.*:ALL"
       append_privs: "yes"
-  run_once: True
+  run_once: true
   delegate_to: "{{ groups['cinder-api'][0] }}"
   when:
     - not use_preconfigured_databases | bool
 
-- include_tasks: bootstrap_service.yml
-  when: database.changed or use_preconfigured_databases | bool
+- name: Run cinder bootstrap container
+  ansible.builtin.import_tasks: bootstrap_service.yml

@@ -30,26 +30,43 @@
             "dest": "/etc/ceilometer/polling.yaml",
             "owner": "ceilometer",
             "perm": "0600"
+        }{% endif %}{% if ceilometer_gnocchi_resources_file_path is defined %},
+        {
+            "source": "{{ container_config_directory }}/gnocchi_resources.yaml",
+            "dest": "/etc/ceilometer/gnocchi_resources.yaml",
+            "owner": "ceilometer",
+            "perm": "0600"
         }{% endif %}{% if ceilometer_policy_file is defined %},
         {
             "source": "{{ container_config_directory }}/{{ ceilometer_policy_file }}",
             "dest": "/etc/ceilometer/{{ ceilometer_policy_file }}",
             "owner": "ceilometer",
             "perm": "0600"
-        }{% endif %},
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
         {
-            "source": "{{ container_config_directory }}/panko.conf",
-            "dest": "/etc/panko/panko.conf",
-            "owner": "ceilometer",
-            "perm": "0600",
-            "optional": true
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/ceilometer",
+            "owner": "ceilometer:kolla",
+            "perm": "2775"
         }
     ],
     "permissions": [
         {
-            "path": "/var/log/kolla/ceilometer",
-            "owner": "ceilometer:ceilometer",
-            "recurse": true
+            "path": "/var/log/kolla/ceilometer/*.log",
+            "owner": "ceilometer:kolla",
+            "perm": "0664"
         }
     ]
 }

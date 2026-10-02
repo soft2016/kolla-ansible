@@ -1,15 +1,26 @@
 ---
-- include_tasks: "register.yml"
-  when: inventory_hostname in groups['octavia-api']
+- name: Register octavia in Keystone
+  ansible.builtin.import_tasks: register.yml
 
-- include_tasks: "config.yml"
-  when: inventory_hostname in groups['octavia-api'] or
-        inventory_hostname in groups['octavia-health-manager'] or
-        inventory_hostname in groups['octavia-housekeeping'] or
-        inventory_hostname in groups['octavia-worker']
+- name: Include tasks from prepare.yml
+  ansible.builtin.include_tasks: prepare.yml
+  when: octavia_auto_configure | bool
 
-- include_tasks: "bootstrap.yml"
-  when: inventory_hostname in groups['octavia-api']
+- name: Import tasks from config-host.yml
+  ansible.builtin.import_tasks: config-host.yml
+
+- name: Configure octavia
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check octavia containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone octavia repository
+  ansible.builtin.include_tasks: clone.yml
+  when: octavia_dev_mode | bool
+
+- name: Bootstrap octavia service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

@@ -16,32 +16,117 @@ the following:
 
 .. code-block:: yaml
 
-   enable_central_logging: "yes"
+   enable_central_logging: true
 
-Elasticsearch
-~~~~~~~~~~~~~
+OpenSearch
+~~~~~~~~~~
 
-Kolla deploys Elasticsearch as part of the E*K stack to store, organize
-and make logs easily accessible.
+Kolla deploys OpenSearch to store, organize and make logs easily accessible.
 
-By default Elasticsearch is deployed on port ``9200``.
+By default OpenSearch is deployed on port ``9200``.
 
 .. note::
 
-   Elasticsearch stores a lot of logs, so if you are running centralized logging,
-   remember to give ``/var/lib/docker`` an adequate space.
+   OpenSearch stores a lot of logs, so if you are running centralized logging,
+   remember to give ``/var/lib/docker`` adequate space.
 
-Kibana
-~~~~~~
+   Alternatively it is possible to use a local directory instead of the volume
+   ``opensearch`` to store the data of OpenSearch. The path can be set via
+   the variable ``opensearch_datadir_volume``.
 
-Kolla deploys Kibana as part of the E*K stack in order to allow operators to
+Applying log retention policies
+-------------------------------
+
+To stop your disks filling up, the Index State Management plugin for
+OpenSearch can be used to define log retention policies. A default
+retention policy is applied to all indices which match the
+``opensearch_log_index_prefix``. This policy first closes old indices,
+and then eventually deletes them. It can be customised via the following
+variables:
+
+* ``opensearch_apply_log_retention_policy``
+* ``opensearch_soft_retention_period_days``
+* ``opensearch_hard_retention_period_days``
+
+By default the soft and hard retention periods are 30 and 60 days
+respectively. If you are upgrading from ElasticSearch, and have previously
+configured ``elasticsearch_curator_soft_retention_period_days`` or
+``elasticsearch_curator_hard_retention_period_days``, those variables will
+be used instead of the defaults. You should migrate your configuration to
+use the new variable names before the Caracal release.
+
+Advanced users may wish to customise the retention policy, which
+is possible by overriding ``opensearch_retention_policy`` with
+a valid policy. See the `Index Management plugin documentation <https://opensearch.org/docs/latest/im-plugin/index/>`__
+for further details.
+
+Updating log retention policies
+-------------------------------
+
+By design, Kolla Ansible will NOT update an existing retention
+policy in OpenSearch. This is to prevent policy changes that may have
+been made via the OpenSearch Dashboards UI, or external tooling,
+from being wiped out.
+
+There are three options for modifying an existing policy:
+
+1. Via the OpenSearch Dashboards UI. See the `Index Management plugin documentation <https://opensearch.org/docs/latest/im-plugin/index/>`__
+for further details.
+
+2. Via the OpenSearch API using external tooling.
+
+3. By manually removing the existing policy via the OpenSearch Dashboards
+   UI (or API), before re-applying the updated policy with Kolla Ansible.
+
+OpenSearch Dashboards
+~~~~~~~~~~~~~~~~~~~~~
+
+Kolla deploys OpenSearch dashboards to allow operators to
 search and visualise logs in a centralised manner.
 
-After successful deployment, Kibana can be accessed using a browser on
-``<kolla_external_vip_address>:5601``.
+After a successful deployment, OpenSearch Dashboards can be accessed using a
+browser on ``<kolla_internal_fqdn>:5601`` or
+``<kolla_external_fqdn>:5601``.
 
-The default username is ``kibana``, the password can be located under
-``<kibana_password>`` in ``/etc/kolla/passwords.yml``.
+The default username is ``opensearch``, the password can be located under
+``<opensearch_dashboards_password>`` in ``/etc/kolla/passwords.yml``.
+
+If you want to prevent OpenSearch Dashboards being exposed on the external
+VIP, you can set ``enable_opensearch_dashboards_external`` to ``false`` in
+``/etc/kolla/globals.yml``.
+
+Index Pattern Configuration
+---------------------------
+
+Kolla Ansible fully automates the creation of the default index pattern.
+During the deployment or reconfiguration process, an index pattern is
+automatically provisioned. By default, it is dynamically configured to
+match the indices defined by the ``opensearch_log_index_prefix``
+variable (which defaults to ``flog``). This results in an automatic
+index pattern of ``flog-*``.
+
+The time filter field name is automatically set to ``@timestamp``,
+ensuring that all time-based aggregations and histograms work perfectly
+out of the box.
+
+As a result, the **Discover** tab is immediately ready to display
+incoming log data upon your first login, requiring no manual setup
+from the operator.
+
+**Adding Custom Index Patterns Manually**
+
+If you configure custom Fluentd outputs to route specific logs to
+different indices, or if you ingest external metrics into OpenSearch,
+you may still need to create additional index patterns manually.
+To do this:
+
+1. Navigate to **Dashboards Management** -> **Index Patterns** in the
+   OpenSearch Dashboards UI.
+2. Click **Create index pattern**.
+3. Define your custom index pattern (e.g., ``my-custom-logs-*``).
+4. Select the appropriate Time Filter field name (typically
+   ``@timestamp``).
+5. Click the **Create index pattern** button.
 
 Search logs - Discover tab
 --------------------------
@@ -72,12 +157,12 @@ services across the cluster.
 The current search can also be saved by clicking the ``Save Search`` icon
 available from the menu on the right hand side.
 
-Example: using Kibana to diagnose a common failure
---------------------------------------------------
+Example: using OpenSearch Dashboards to diagnose a common failure
+-----------------------------------------------------------------
 
-The following example demonstrates how Kibana can be used to diagnose a common
-OpenStack problem, where an instance fails to launch with the error 'No valid
-host was found'.
+The following example demonstrates how OpenSearch can be used to diagnose a
+common OpenStack problem, where an instance fails to launch with the error
+'No valid host was found'.
 
 First, re-run the server creation with ``--debug``:
 
@@ -95,17 +180,18 @@ example ID looks like this:
 
    X-Compute-Request-Id: req-c076b50a-6a22-48bf-8810-b9f41176a6d5
 
-Taking the value of ``X-Compute-Request-Id``, enter the value into the Kibana
-search bar, minus the leading ``req-``. Assuming some basic filters have been
-added as shown in the previous section, Kibana should now show the path this
-request made through the OpenStack deployment, starting at a ``nova-api`` on
-a control node, through the ``nova-scheduler``, ``nova-conductor``, and finally
+Taking the value of ``X-Compute-Request-Id``, enter the value into the
+OpenSearch Dashboards search bar, minus the leading ``req-``. Assuming some
+basic filters have been added as shown in the previous section, OpenSearch
+Dashboards should now show the path this request made through the
+OpenStack deployment, starting at a ``nova-api`` on a control node,
+through the ``nova-scheduler``, ``nova-conductor``, and finally
 ``nova-compute``. Inspecting the ``Payload`` of the entries marked ``ERROR``
 should quickly lead to the source of the problem.
 
 While some knowledge is still required of how Nova works in this instance, it
-can still be seen how Kibana helps in tracing this data, particularly in a
-large scale deployment scenario.
+can still be seen how OpenSearch Dashboards helps in tracing this data,
+particularly in a large scale deployment scenario.
 
 Visualize data - Visualize tab
 ------------------------------
@@ -161,7 +247,7 @@ choosing *import* option.
 Custom log rules
 ~~~~~~~~~~~~~~~~
 
-Kolla-Ansible automatically deploys Fluentd for forwarding OpenStack logs
+Kolla Ansible automatically deploys Fluentd for forwarding OpenStack logs
 from across the control plane to a central logging repository. The Fluentd
 configuration is split into four parts: Input, forwarding, filtering and
 formatting. The following can be customised:
@@ -176,6 +262,17 @@ defined by kolla-ansible.
 
 Configuration of custom fluentd filters is possible by placing filter
 configuration files in ``/etc/kolla/config/fluentd/filter/*.conf`` on the
+control host.
+
+Custom log formatting
+---------------------
+
+In some scenarios it may be useful to perform custom formatting of logs before
+forwarding them. For example, the JSON formatter plugin can be used to convert
+an event to JSON.
+
+Configuration of custom fluentd formatting is possible by placing filter
+configuration files in ``/etc/kolla/config/fluentd/format/*.conf`` on the
 control host.
 
 Custom log forwarding
@@ -197,3 +294,13 @@ network equipment. This can be done by configuring custom fluentd inputs.
 Configuration of custom fluentd inputs is possible by placing input
 configuration files in ``/etc/kolla/config/fluentd/input/*.conf`` on the
 control host.
+
+Systemd Logs
+------------
+
+By default, when enabling central logging, we also enable reading ``systemd``
+logs from the ``/var/log/journal`` file.
+
+To disable this behavior when central logging is enabled, set the value of
+the variable ``enable_fluentd_systemd`` to ``false`` in the configuration
+file ``/etc/kolla/globals.yml``.

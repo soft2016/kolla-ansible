@@ -1,4 +1,16 @@
+[DEFAULT]
+force_config_drive = {{ force_config_drive }}
 [libvirt]
-virt_type=qemu
-# NOTE(Jeffrey4l): fix the gate in iax-ord nodes for libvirt 2.0.
-cpu_mode=none
+{% if ansible_architecture == 'aarch64' %}
+cpu_mode = custom
+cpu_model=max
+{% elif ansible_architecture == 'x86_64' %}
+# RHEL 9 are being compiled for the x86_64-v2 architecture which is
+# newer than the qemu default of qemu64. Nehalem is apparently the
+# oldest model that works for x86_64-v2 and is expected to work on
+# Intel and AMD cpus with kvm or qemu.
+{%     if virt_type == 'kvm' %}
+cpu_mode = custom
+cpu_models = Nehalem
+{%     endif %}
+{% endif %}

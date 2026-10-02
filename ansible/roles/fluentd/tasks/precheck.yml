@@ -1,0 +1,7 @@
+---
+- name: Precheck fluentd configuration
+  ansible.builtin.import_role:
+    name: service-precheck
+  vars:
+    service_precheck_services: "{{ fluentd_services }}"
+    service_name: "{{ project_name }}"

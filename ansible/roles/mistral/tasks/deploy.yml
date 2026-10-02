@@ -1,17 +1,19 @@
 ---
-- include_tasks: register.yml
-  when: inventory_hostname in groups['mistral-api']
+- name: Register mistral in Keystone
+  ansible.builtin.import_tasks: register.yml
 
-- include_tasks: config.yml
-  when: inventory_hostname in groups['mistral-api'] or
-        inventory_hostname in groups['mistral-engine'] or
-        inventory_hostname in groups['mistral-executor']
+- name: Configure mistral
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: clone.yml
+- name: Check mistral containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone mistral repository
+  ansible.builtin.include_tasks: clone.yml
   when: mistral_dev_mode | bool
 
-- include_tasks: bootstrap.yml
-  when: inventory_hostname in groups['mistral-api']
+- name: Bootstrap mistral service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

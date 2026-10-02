@@ -5,14 +5,8 @@ Using Kolla For OpenStack Development
 Kolla-ansible can be used to deploy containers in a way suitable for doing
 development on OpenStack services.
 
-.. note::
-
-   This functionality is new in the Pike release.
-
 Heat was the first service to be supported, and so the following will use
 submitting a patch to Heat using Kolla as an example.
-
-Only source containers are supported.
 
 .. warning::
 
@@ -37,12 +31,21 @@ To enable it just for heat, set:
 
    heat_dev_mode: true
 
+To customise the repository and branch to use, set:
+
+.. path /etc/kolla/globals.yml
+.. code-block:: yaml
+
+   heat_git_repository: "https://git.example.com/openstack/heat.git"
+   heat_source_version: "custom"
+
 Usage
 -----
 
 When enabled, the source repo for the service in question will be cloned under
-``/opt/stack/`` on the target node(s). This will be bind mounted into the
-container's virtualenv under the location expected by the service on startup.
+``/opt/stack/`` on the target node(s). This will be bind mounted to
+container's ``/dev-mode`` directory. From there, it will be installed at every
+startup of the container using ``kolla_install_projects`` script.
 
 After making code changes, simply restart the container to pick them up:
 

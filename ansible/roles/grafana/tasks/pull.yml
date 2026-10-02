@@ -1,8 +1,4 @@
 ---
-- name: Pulling grafana image
-  become: true
-  kolla_docker:
-    action: "pull_image"
-    common_options: "{{ docker_common_options }}"
-    image: "{{ grafana_image_full }}"
-  when: inventory_hostname in groups['grafana']
+- name: Pull grafana images
+  ansible.builtin.import_role:
+    role: service-images-pull

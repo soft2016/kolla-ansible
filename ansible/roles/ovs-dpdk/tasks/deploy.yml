@@ -1,5 +1,9 @@
 ---
-- include_tasks: config.yml
+- name: Configure ovs-dpdk
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check ovs-dpdk containers
+  ansible.builtin.import_tasks: check-containers.yml
 
 - name: Flush Handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

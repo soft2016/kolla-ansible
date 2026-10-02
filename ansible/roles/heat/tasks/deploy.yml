@@ -1,21 +1,20 @@
 ---
-- include_tasks: register.yml
-  when: inventory_hostname in groups['heat-api']
+- name: Register heat in Keystone
+  ansible.builtin.import_tasks: register.yml
 
-- include_tasks: config.yml
-  when: inventory_hostname in groups['heat-api'] or
-        inventory_hostname in groups['heat-api-cfn'] or
-        inventory_hostname in groups['heat-engine']
+- name: Configure heat
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: clone.yml
+- name: Check heat containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone heat repository
+  ansible.builtin.include_tasks: clone.yml
   when:
     - heat_dev_mode | bool
-    - inventory_hostname in groups['heat-api'] or
-      inventory_hostname in groups['heat-api-cfn'] or
-      inventory_hostname in groups['heat-engine']
 
-- include_tasks: bootstrap.yml
-  when: inventory_hostname in groups['heat-api']
+- name: Bootstrap heat service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

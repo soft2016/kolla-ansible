@@ -1,40 +1,140 @@
 ---
+- name: Precheck cinder configuration
+  ansible.builtin.import_role:
+    name: service-precheck
+  vars:
+    service_precheck_services: "{{ cinder_services }}"
+    service_name: "{{ project_name }}"
+
 - name: Get container facts
+  become: true
   kolla_container_facts:
+    action: get_containers
+    container_engine: "{{ kolla_container_engine }}"
     name:
       - cinder_api
+  check_mode: false
   register: container_facts
 
 - name: Checking free port for Cinder API
-  wait_for:
+  ansible.builtin.wait_for:
     host: "{{ api_interface_address }}"
-    port: "{{ cinder_api_port }}"
+    port: "{{ cinder_api_listen_port }}"
     connect_timeout: 1
     timeout: 1
     state: stopped
   when:
-    - container_facts['cinder_api'] is not defined
+    - container_facts.containers['cinder_api'] is not defined
     - inventory_hostname in groups['cinder-api']
 
 - name: Checking at least one valid backend is enabled for Cinder
-  run_once: True
-  local_action: fail msg="Please enable at least one backend when enabling Cinder"
+  run_once: true
+  ansible.builtin.fail:
+    msg: "Please enable at least one backend when enabling Cinder"
   when:
-    - not enable_cinder_backend_hnas_iscsi | bool
-    - not enable_cinder_backend_hnas_nfs | bool
+    - not skip_cinder_backend_check | bool
     - not enable_cinder_backend_iscsi | bool
     - not enable_cinder_backend_lvm | bool
     - not enable_cinder_backend_nfs | bool
     - not cinder_backend_ceph | bool
-    - not cinder_backend_vmwarevc_vmdk | bool
-    - not enable_cinder_backend_zfssa_iscsi | bool
+    - not enable_cinder_backend_quobyte | bool
+    - not enable_cinder_backend_pure_iscsi | bool
+    - not enable_cinder_backend_pure_fc | bool
+    - not enable_cinder_backend_pure_roce | bool
+    - not enable_cinder_backend_pure_nvme_tcp | bool
+    - not enable_cinder_backend_lightbits | bool
+    - not enable_cinder_backend_vast | bool
 
 - name: Checking LVM volume group exists for Cinder
-  command: "vgs {{ cinder_volume_group }}"
+  become: true
+  ansible.builtin.command: "vgs {{ cinder_volume_group }}"
   register: result
   changed_when: false
-  failed_when: result | failed
+  failed_when: result is failed
+  check_mode: false
   when:
     - enable_cinder | bool
     - enable_cinder_backend_lvm | bool
-    - inventory_hostname in groups['cinder-volume']
+    - inventory_hostname in groups['cinder-volume-multiple'] if cinder_enabled_backends | length > 1 else inventory_hostname in groups['cinder-volume-lvm']
+
+- name: Checking for coordination backend if Ceph backend is enabled
+  run_once: true
+  ansible.builtin.fail:
+    msg: "Please enable valkey or etcd when using Cinder Ceph backend"
+  when:
+    - not skip_cinder_backend_check | bool
+    - cinder_backend_ceph | bool
+    - cinder_coordination_backend == ''
+    - groups['cinder-volume-multiple'] | length > 1 if enable_cinder_backend_lvm | bool else groups['cinder-volume'] | length > 1
+
+- name: Check if S3 configurations are defined
+  ansible.builtin.assert:
+    that:
+      - vars[item] is defined
+    msg: "Cinder backup S3 backend is enabled, either the {{ item }} or {{ item | replace('cinder_backup_', '') }} variable must be defined."
+  with_items:
+    - cinder_backup_s3_url
+    - cinder_backup_s3_bucket
+    - cinder_backup_s3_access_key
+    - cinder_backup_s3_secret_key
+  when: cinder_backup_driver == "s3"
+
+- name: Check if Lightbits configurations are defined
+  ansible.builtin.assert:
+    that:
+      - vars[item] is defined
+    msg: "Cinder Lightbits backend is enabled, the {{ item }} variable must be defined."
+  with_items:
+    - lightos_api_address
+    - lightos_jwt
+  when: enable_cinder_backend_lightbits == "yes"
+
+- name: Check if VAST configurations are defined
+  ansible.builtin.assert:
+    that:
+      - vars[item] is defined
+      - vars[item] | length > 0
+    msg: "Cinder VAST backend is enabled, the {{ item }} variable must be defined."
+  with_items:
+    - cinder_vast_ip
+    - cinder_vast_vippool_name
+    - cinder_vast_subsystem
+  when: enable_cinder_backend_vast | bool
+
+- name: Check if VAST password and username are defined when API token is not set
+  ansible.builtin.assert:
+    that:
+      - vars[item] is defined
+      - vars[item] | length > 0
+    msg: "Cinder VAST backend is enabled, cinder_vast_password and cinder_vast_username must be set when cinder_vast_api_token is not set."
+  with_items:
+    - cinder_vast_password
+    - cinder_vast_username
+  when:
+    - enable_cinder_backend_vast | bool
+    - cinder_vast_api_token is not defined or cinder_vast_api_token | length == 0
+
+- name: Check if cinder_cluster_name is configured for HA configurations
+  ansible.builtin.assert:
+    that:
+      - cinder_cluster_name != ""
+    msg: |
+      Multiple cinder-volume instances detected but cinder_cluster_name is not set- please see
+      https://docs.openstack.org/kolla-ansible/latest/reference/storage/cinder-guide.html#ha
+      for guidance.
+  when:
+    - not cinder_cluster_skip_precheck
+    - groups['cinder-volume'] | length > 1
+
+- name: Check if cinder_cluster_name is configured and configuration is non-HA
+  ansible.builtin.assert:
+    that:
+      - cinder_cluster_name == ""
+    msg: |
+      Single cinder-volume instance detected but cinder_cluster_name is set (cluster
+      configuration will not be applied) - please see
+      https://docs.openstack.org/kolla-ansible/latest/reference/storage/cinder-guide.html#ha
+      for guidance.
+  when:
+    - not cinder_cluster_skip_precheck
+    - groups['cinder-volume'] | length == 1

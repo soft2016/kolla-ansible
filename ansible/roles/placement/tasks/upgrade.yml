@@ -1,0 +1,39 @@
+---
+- name: Import tasks from register.yml
+  ansible.builtin.import_tasks: register.yml
+
+- name: Include tasks from clone.yml
+  ansible.builtin.include_tasks: clone.yml
+  when: placement_dev_mode | bool
+
+- name: Configure placement
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check placement containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Import tasks from bootstrap.yml
+  ansible.builtin.import_tasks: bootstrap.yml
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Perform Placement online data migration
+  vars:
+    placement_api: "{{ placement_services['placement-api'] }}"
+  become: true
+  kolla_container:
+    action: "start_container"
+    common_options: "{{ docker_common_options }}"
+    detach: false
+    environment:
+      KOLLA_OSM:
+      KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+    image: "{{ placement_api.image }}"
+    labels:
+      BOOTSTRAP:
+    name: "bootstrap_placement"
+    restart_policy: oneshot
+    volumes: "{{ placement_api.volumes }}"
+  run_once: true
+  delegate_to: "{{ groups[placement_api.group][0] }}"

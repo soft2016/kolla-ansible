@@ -1,0 +1,5 @@
+---
+upgrade:
+  - |
+    The legacy (non-rolling) ``ironic`` upgrade mechanism has been dropped.
+    Ironic upgrades now exclusively use the rolling upgrade mechanism.

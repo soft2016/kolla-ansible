@@ -1,17 +1,19 @@
 ---
-- include_tasks: register.yml
-  when: inventory_hostname in groups['trove-api']
+- name: Register trove in Keystone
+  ansible.builtin.import_tasks: register.yml
 
-- include_tasks: config.yml
-  when: inventory_hostname in groups['trove-api'] or
-        inventory_hostname in groups['trove-conductor'] or
-        inventory_hostname in groups['trove-taskmanager']
+- name: Configure trove
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: clone.yml
+- name: Check trove containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone trove repository
+  ansible.builtin.include_tasks: clone.yml
   when: trove_dev_mode | bool
 
-- include_tasks: bootstrap.yml
-  when: inventory_hostname in groups['trove-api']
+- name: Bootstrap trove service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

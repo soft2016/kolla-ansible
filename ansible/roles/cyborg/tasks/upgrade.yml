@@ -1,0 +1,12 @@
+---
+- name: Configure cyborg
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check cyborg containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Run cyborg bootstrap container
+  ansible.builtin.import_tasks: bootstrap_service.yml
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

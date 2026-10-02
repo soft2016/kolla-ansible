@@ -1,0 +1,310 @@
+---
+- name: Ensuring config directories exist
+  become: true
+  ansible.builtin.file:
+    path: "{{ node_config_directory }}/{{ item.key }}"
+    state: "directory"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  when:
+    - item.key != "nova-compute-ironic" or nova_multi_compute_ironic_config | length == 0
+  with_dict: "{{ nova_cell_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: Copying over TLS certificates
+  ansible.builtin.include_tasks: copy-certs.yml
+  when:
+    - nova_cell_copy_certs | bool
+
+- name: Include tasks from external_ceph.yml
+  ansible.builtin.include_tasks: external_ceph.yml
+  when:
+    - (nova_backend == "rbd" or cinder_backend_ceph | bool)
+    - inventory_hostname in groups[nova_cell_compute_group]
+
+- name: Check if policies shall be overwritten
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  delegate_to: localhost
+  run_once: true
+  register: nova_policy
+  with_first_found:
+    - files: "{{ supported_policy_format_list }}"
+      paths:
+        - "{{ node_custom_config }}/nova/"
+      skip: true
+
+- name: Set nova policy file
+  ansible.builtin.set_fact:
+    nova_policy_file: "{{ nova_policy.results.0.stat.path | basename }}"
+    nova_policy_file_path: "{{ nova_policy.results.0.stat.path }}"
+  when:
+    - nova_policy.results | length > 0
+
+- name: Check for vendordata file
+  ansible.builtin.stat:
+    path: "{{ node_custom_config }}/nova/vendordata.json"
+  delegate_to: localhost
+  run_once: true
+  register: vendordata_file
+
+- name: Set vendordata file path
+  ansible.builtin.set_fact:
+    vendordata_file_path: "{{ vendordata_file.stat.path }}"
+  when:
+    - vendordata_file.stat.exists
+
+- name: Ensure compute_id exists in nova_compute volume
+  vars:
+    service: "{{ nova_cell_services['nova-compute'] }}"
+    hypervisor_nodename: "{{ hostvars[inventory_hostname].ansible_facts.nodename }}"
+  when: service | service_enabled_and_mapped_to_host
+  block:
+    - name: List all hypervisors
+      kolla_toolbox:
+        container_engine: "{{ kolla_container_engine }}"
+        module_name: openstack.cloud.resources
+        module_args:
+          auth: "{{ openstack_auth }}"
+          cloud: "{{ openstack_auth_cloud }}"
+          ca_cert: "{{ openstack_cacert }}"
+          region_name: "{{ openstack_region_name }}"
+          endpoint_type: "{{ openstack_interface }}"
+          service: "compute"
+          type: "hypervisor"
+      register: hypervisors
+      check_mode: false
+      become: true
+      delegate_to: "{{ groups[nova_cell_conductor_group][0] }}"
+
+    - name: Match current hypervisor
+      ansible.builtin.set_fact:
+        matched_hypervisors: >-
+          {{ hypervisors.resources | selectattr('name', 'equalto', hypervisor_nodename) }}
+      when: hypervisors.resources | length > 0
+
+    - name: Assert that only one hypervisor was matched
+      ansible.builtin.assert:
+        that:
+          - matched_hypervisors | length == 1
+        fail_msg: |
+          "Found multiple compute services with same host name, please check your Nova "
+          "compute agents list and fix it. The query with hypervisor name "
+          "'{{ hypervisor_nodename }}' returned following: {{ matched_hypervisors }}"
+      when:
+        - hypervisors.resources | length > 0
+        - matched_hypervisors | length > 0
+
+    - name: Copy the matched hypervisor UUID to compute_id
+      ansible.builtin.copy:
+        content: "{{ matched_hypervisors[0].id }}"
+        dest: "{{ node_config_directory }}/nova-compute/compute_id"
+        mode: "0660"
+      become: true
+      when:
+        - hypervisors.resources | length > 0
+        - matched_hypervisors | length == 1
+
+    # If the host was never registered, create a new hypervisor id and copy as compute_id
+    - name: Generate a new UUID then copy to compute_id
+      ansible.builtin.copy:
+        content: "{{ hypervisor_nodename | to_uuid }}"
+        dest: "{{ node_config_directory }}/nova-compute/compute_id"
+        mode: "0660"
+      become: true
+      when: hypervisors.resources | length == 0 or matched_hypervisors | length == 0
+
+- name: Copying over config.json files for services
+  become: true
+  ansible.builtin.template:
+    src: "{{ item.key }}.json.j2"
+    dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
+    mode: "0660"
+  when:
+    - item.key != "nova-compute-ironic" or nova_multi_compute_ironic_config | length == 0
+  with_dict: "{{ nova_cell_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: Copying over nova.conf
+  become: true
+  vars:
+    service_name: "{{ item.key }}"
+  merge_configs:
+    sources:
+      - "{{ role_path }}/templates/nova.conf.j2"
+      - "{{ node_custom_config }}/global.conf"
+      - "{{ node_custom_config }}/nova.conf"
+      - "{{ node_custom_config }}/nova/{{ item.key }}.conf"
+      - "{{ node_custom_config }}/nova/{{ inventory_hostname }}/nova.conf"
+      - "{{ node_custom_config }}/nova/{{ inventory_hostname }}/{{ item.key }}.conf"
+    dest: "{{ node_config_directory }}/{{ item.key }}/nova.conf"
+    mode: "0660"
+  when:
+    - item.key in nova_cell_services_require_nova_conf
+    - item.key != "nova-compute-ironic" or nova_multi_compute_ironic_config | length == 0
+  with_dict: "{{ nova_cell_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: Copying over config for Nova compute Ironic multi-instance
+  vars:
+    service: "{{ nova_cell_services['nova-compute-ironic'] }}"
+  ansible.builtin.include_tasks: config-compute-ironic.yml
+  loop: "{{ range(1, nova_multi_compute_ironic_config | length + 1) | list }}"
+  when:
+    - nova_multi_compute_ironic_config | length > 0
+    - inventory_hostname in groups[service.group ~ '-' ~ item]
+
+- name: Copying over Nova compute provider config
+  become: true
+  vars:
+    service: "{{ nova_cell_services['nova-compute'] }}"
+  ansible.builtin.copy:
+    content: "{{ nova_cell_compute_provider_config | to_nice_yaml(indent=2) }}"
+    dest: "{{ node_config_directory }}/nova-compute/provider_config.yaml"
+    mode: "0660"
+  when:
+    - service | service_enabled_and_mapped_to_host
+    - nova_cell_compute_provider_config is defined
+
+- name: Copying over qemu configuration
+  become: true
+  vars:
+    service: "{{ nova_cell_services['nova-libvirt'] }}"
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/nova-libvirt/qemu.conf"
+    mode: "0660"
+  with_first_found:
+    - files:
+        - "{{ node_custom_config }}/nova/{{ inventory_hostname }}/qemu.conf.j2"
+        - "{{ node_custom_config }}/nova/qemu.conf.j2"
+        - "{{ role_path }}/templates/qemu.conf.j2"
+      skip: false
+  when: service | service_enabled_and_mapped_to_host
+
+- name: Copying over libvirt configuration
+  become: true
+  vars:
+    service: "{{ nova_cell_services['nova-libvirt'] }}"
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/nova-libvirt/libvirtd.conf"
+    mode: "0660"
+  with_first_found:
+    - files:
+        - "{{ node_custom_config }}/nova/{{ inventory_hostname }}/libvirtd.conf.j2"
+        - "{{ node_custom_config }}/nova/libvirtd.conf.j2"
+        - "{{ role_path }}/templates/libvirtd.conf.j2"
+      skip: false
+  when: service | service_enabled_and_mapped_to_host
+
+- name: Copying over libvirt TLS keys
+  ansible.builtin.include_tasks: config-libvirt-tls.yml
+  when:
+    - inventory_hostname in groups[nova_cell_compute_group]
+    - libvirt_tls | bool
+    - libvirt_tls_manage_certs | bool
+
+- name: Copying over libvirt SASL configuration
+  become: true
+  vars:
+    service_name: "{{ item.service }}"
+    service: "{{ nova_cell_services[service_name] }}"
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ node_config_directory }}/{{ service_name }}/{{ item.dest }}"
+    mode: "0660"
+  when:
+    - libvirt_enable_sasl | bool
+    - service | service_enabled_and_mapped_to_host
+  with_items:
+    - { src: "auth.conf.j2", dest: "auth.conf", service: "nova-compute" }
+    - { src: "auth.conf.j2", dest: "auth.conf", service: "nova-libvirt" }
+    - { src: "sasl.conf.j2", dest: "sasl.conf", service: "nova-libvirt" }
+
+- name: Copying files for nova-ssh
+  become: true
+  vars:
+    service: "{{ nova_cell_services['nova-ssh'] }}"
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ node_config_directory }}/nova-ssh/{{ item.dest }}"
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
+  with_items:
+    - { src: "sshd_config.j2", dest: "sshd_config" }
+    - { src: "id_rsa", dest: "id_rsa" }
+    - { src: "id_rsa.pub", dest: "id_rsa.pub" }
+    - { src: "ssh_config.j2", dest: "ssh_config" }
+
+- name: Copying 'release' file for nova_compute
+  vars:
+    service: "{{ nova_cell_services['nova-compute'] }}"
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/nova-compute/release"
+    mode: "0660"
+  with_first_found:
+    - files:
+        - "{{ node_custom_config }}/nova_compute/{{ inventory_hostname }}/release"
+        - "{{ node_custom_config }}/nova_compute/release"
+        - "{{ node_custom_config }}/nova/release"
+      skip: true
+  when: service | service_enabled_and_mapped_to_host
+
+- name: Generating 'hostnqn' file for nova_compute
+  vars:
+    hostnqn: "nqn.2014-08.org.nvmexpress:uuid:{{ ansible_facts.hostname | to_uuid }}"
+    service: "{{ nova_cell_services['nova-compute'] }}"
+  ansible.builtin.template:
+    src: "templates/hostnqn.j2"
+    dest: "{{ node_config_directory }}/nova-compute/hostnqn"
+    mode: "0660"
+  become: true
+  when: service | service_enabled_and_mapped_to_host
+
+- name: Copying over existing policy file
+  become: true
+  ansible.builtin.template:
+    src: "{{ nova_policy_file_path }}"
+    dest: "{{ node_config_directory }}/{{ item.key }}/{{ nova_policy_file }}"
+    mode: "0660"
+  when:
+    - nova_policy_file is defined
+    - item.key in nova_cell_services_require_policy_yaml
+    - item.key != "nova-compute-ironic" or nova_multi_compute_ironic_config | length == 0
+  with_dict: "{{ nova_cell_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: Copying over vendordata file to containers
+  vars:
+    service: "{{ nova_cell_services[item] }}"
+  ansible.builtin.copy:
+    src: "{{ vendordata_file_path }}"
+    dest: "{{ node_config_directory }}/{{ item }}/vendordata.json"
+    mode: "0660"
+  become: true
+  when:
+    - vendordata_file_path is defined
+    - service | service_enabled_and_mapped_to_host
+    - item != "nova-compute-ironic" or nova_multi_compute_ironic_config | length == 0
+  with_items:
+    - nova-compute
+    - nova-compute-ironic
+
+- name: Copying over multipath.conf
+  become: true
+  vars:
+    service: "{{ nova_cell_services['nova-compute'] }}"
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/nova-compute/multipath.conf"
+    mode: "0660"
+  with_first_found:
+    - files:
+        - "{{ node_custom_config }}/nova/{{ inventory_hostname }}/multipath.conf"
+        - "{{ node_custom_config }}/multipath/{{ inventory_hostname }}/multipath.conf"
+        - "{{ node_custom_config }}/nova/multipath.conf"
+        - "{{ node_custom_config }}/multipath.conf"
+        - "multipath.conf.j2"
+      skip: true
+  when:
+    - service | service_enabled_and_mapped_to_host
+    - enable_multipathd | bool

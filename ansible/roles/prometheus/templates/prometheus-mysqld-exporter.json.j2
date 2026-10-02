@@ -1,18 +1,36 @@
 {
-    "command": "/opt/mysqld_exporter/mysqld_exporter -config.my-cnf /etc/prometheus/my.cnf -web.listen-address {{ api_interface_address }}:{{ prometheus_mysqld_exporter_port }}",
+    "command": "/opt/mysqld_exporter/mysqld_exporter --config.my-cnf /etc/prometheus/my.cnf --web.listen-address {{ api_interface_address | put_address_in_context('url') }}:{{ prometheus_mysqld_exporter_port }}{% if prometheus_mysqld_exporter_cmdline_extras %} {{ prometheus_mysqld_exporter_cmdline_extras }}{% endif %}",
     "config_files": [
         {
             "source": "{{ container_config_directory }}/my.cnf",
             "dest": "/etc/prometheus/my.cnf",
             "owner": "prometheus",
             "perm": "0600"
+        }{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/prometheus",
+            "owner": "prometheus:kolla",
+            "perm": "2775"
         }
     ],
     "permissions": [
         {
-            "path": "/var/log/kolla/prometheus",
+            "path": "/var/log/kolla/prometheus/*.log",
             "owner": "prometheus:kolla",
-            "recurse": true
+            "perm": "0664"
         }
     ]
 }

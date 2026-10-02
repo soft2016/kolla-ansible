@@ -1,0 +1,46 @@
+{
+    "command": "octavia-driver-agent --config-file /etc/octavia/octavia.conf",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/octavia.conf",
+            "dest": "/etc/octavia/octavia.conf",
+            "owner": "octavia",
+            "perm": "0600"
+        }{% if octavia_policy_file is defined %},
+        {
+            "source": "{{ container_config_directory }}/{{ octavia_policy_file }}",
+            "dest": "/etc/octavia/{{ octavia_policy_file }}",
+            "owner": "octavia",
+            "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/octavia",
+            "owner": "octavia:kolla",
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/octavia/*.log",
+            "owner": "octavia:kolla",
+            "perm": "0664"
+        },
+        {
+            "path": "/var/run/octavia",
+            "owner": "octavia:octavia"
+        }
+    ]
+}

@@ -1,16 +1,31 @@
 ---
-- include_tasks: register.yml
-  when: inventory_hostname in groups['neutron-server']
+- name: Import tasks from neutron_plugin_agent_check.yml
+  ansible.builtin.import_tasks: neutron_plugin_agent_check.yml
 
-- include_tasks: config.yml
+- name: Register neutron in Keystone
+  ansible.builtin.import_tasks: register.yml
 
-- include_tasks: config-neutron-fake.yml
+- name: Clone neutron repository
+  ansible.builtin.include_tasks: clone.yml
+  when: neutron_dev_mode | bool
+
+- name: Import tasks from config-host.yml
+  ansible.builtin.import_tasks: config-host.yml
+
+- name: Configure neutron
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check neutron containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Include tasks from config-neutron-fake.yml
+  ansible.builtin.include_tasks: config-neutron-fake.yml
   when:
     - enable_nova_fake | bool
     - inventory_hostname in groups['compute']
 
-- include_tasks: bootstrap.yml
-  when: inventory_hostname in groups['neutron-server']
+- name: Bootstrap neutron service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush Handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

@@ -1,0 +1,48 @@
+{
+    "command": "mistral-server --server event-engine --config-file /etc/mistral/mistral.conf",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/mistral.conf",
+            "dest": "/etc/mistral/mistral.conf",
+            "owner": "mistral",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/event_definitions.yaml",
+            "dest": "/etc/mistral/event_definitions.yaml",
+            "owner": "mistral",
+            "perm": "0600"
+        }{% if mistral_policy_file is defined %},
+        {
+            "source": "{{ container_config_directory }}/{{ mistral_policy_file }}",
+            "dest": "/etc/mistral/{{ mistral_policy_file }}",
+            "owner": "mistral",
+            "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/mistral",
+            "owner": "mistral:kolla",
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/mistral/*.log",
+            "owner": "mistral:kolla",
+            "perm": "0664"
+        }
+    ]
+}

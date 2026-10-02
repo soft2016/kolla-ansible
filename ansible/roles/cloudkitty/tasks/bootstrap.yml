@@ -1,36 +1,105 @@
 ---
 - name: Creating Cloudkitty database
+  become: true
   kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
     module_name: mysql_db
     module_args:
+      ca_cert: "{{ openstack_cacert if database_enable_tls_internal | bool else omit }}"
       login_host: "{{ database_address }}"
       login_port: "{{ database_port }}"
-      login_user: "{{ database_user }}"
+      login_user: "{{ cloudkitty_database_shard_root_user }}"
       login_password: "{{ database_password }}"
       name: "{{ cloudkitty_database_name }}"
-  register: database
-  run_once: True
+  run_once: true
   delegate_to: "{{ groups['cloudkitty-api'][0] }}"
   when:
     - not use_preconfigured_databases | bool
 
 - name: Creating Cloudkitty database user and setting permissions
+  become: true
   kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
     module_name: mysql_user
     module_args:
+      ca_cert: "{{ openstack_cacert if database_enable_tls_internal | bool else omit }}"
       login_host: "{{ database_address }}"
       login_port: "{{ database_port }}"
-      login_user: "{{ database_user }}"
+      login_user: "{{ cloudkitty_database_shard_root_user }}"
       login_password: "{{ database_password }}"
       name: "{{ cloudkitty_database_user }}"
       password: "{{ cloudkitty_database_password }}"
       host: "%"
       priv: "{{ cloudkitty_database_name }}.*:ALL"
       append_privs: "yes"
-  run_once: True
+  run_once: true
   delegate_to: "{{ groups['cloudkitty-api'][0] }}"
   when:
     - not use_preconfigured_databases | bool
 
-- include_tasks: bootstrap_service.yml
-  when: database.changed or use_preconfigured_databases | bool
+- name: Checking if Cloudkitty elasticsearch index exists
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: uri
+    module_args:
+      url: "{{ cloudkitty_elasticsearch_url }}/{{ cloudkitty_elasticsearch_index_name }}"
+      status_code: 200, 404
+  run_once: true
+  delegate_to: "{{ groups['cloudkitty-api'][0] }}"
+  register: cloudkitty_index_elasticsearch
+  when: cloudkitty_storage_backend == 'elasticsearch'
+
+- name: Checking if Cloudkitty opensearch index exists
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: uri
+    module_args:
+      url: "{{ cloudkitty_opensearch_url }}/{{ cloudkitty_opensearch_index_name }}"
+      status_code: 200, 404
+  run_once: true
+  delegate_to: "{{ groups['cloudkitty-api'][0] }}"
+  register: cloudkitty_index_opensearch
+  when: cloudkitty_storage_backend == 'opensearch'
+
+- name: Creating Cloudkitty elasticsearch index
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: uri
+    module_args:
+      url: "{{ cloudkitty_elasticsearch_url }}/{{ cloudkitty_elasticsearch_index_name }}"
+      method: PUT
+      status_code: 200
+      return_content: true
+      body: |
+        {}
+      body_format: json
+  run_once: true
+  delegate_to: "{{ groups['cloudkitty-api'][0] }}"
+  when:
+    - cloudkitty_storage_backend == 'elasticsearch'
+    - cloudkitty_index_elasticsearch.get('status') != 200
+
+- name: Creating Cloudkitty opensearch index
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: uri
+    module_args:
+      url: "{{ cloudkitty_opensearch_url }}/{{ cloudkitty_opensearch_index_name }}"
+      method: PUT
+      status_code: 200
+      return_content: true
+      body: |
+        {}
+      body_format: json
+  run_once: true
+  delegate_to: "{{ groups['cloudkitty-api'][0] }}"
+  when:
+    - cloudkitty_storage_backend == 'opensearch'
+    - cloudkitty_index_opensearch.get('status') != 200
+
+- name: Run cloudkitty bootstrap container
+  ansible.builtin.import_tasks: bootstrap_service.yml

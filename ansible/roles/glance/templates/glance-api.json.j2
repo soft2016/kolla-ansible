@@ -1,9 +1,15 @@
 {
-    "command": "glance-api",
+    "command": "uwsgi /etc/glance/glance-api-uwsgi.ini",
     "config_files": [
         {
             "source": "{{ container_config_directory }}/glance-api.conf",
             "dest": "/etc/glance/glance-api.conf",
+            "owner": "glance",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/glance-api-uwsgi.ini",
+            "dest": "/etc/glance/glance-api-uwsgi.ini",
             "owner": "glance",
             "perm": "0600"
         }{% if glance_policy_file is defined %},
@@ -12,16 +18,22 @@
             "dest": "/etc/glance/{{ glance_policy_file }}",
             "owner": "glance",
             "perm": "0600"
+        }{% endif %}{% if glance_enable_tls_backend | bool %},
+        {
+            "source": "{{ container_config_directory }}/glance-cert.pem",
+            "dest": "/etc/glance/certs/glance-cert.pem",
+            "owner": "glance",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/glance-key.pem",
+            "dest": "/etc/glance/certs/glance-key.pem",
+            "owner": "glance",
+            "perm": "0600"
         }{% endif %}{% if glance_backend_ceph | bool %},
         {
-            "source": "{{ container_config_directory }}/ceph.*",
-            "dest": "/etc/ceph/",
-            "owner": "glance",
-            "perm": "0700"
-        }{% endif %}{% if glance_backend_swift | bool %},
-        {
-            "source": "{{ container_config_directory }}/glance-swift.conf",
-            "dest": "/etc/glance/glance-swift.conf",
+            "source": "{{ container_config_directory }}/ceph",
+            "dest": "/etc/ceph",
             "owner": "glance",
             "perm": "0600"
         }{% endif %}{% if enable_glance_image_cache | bool %},
@@ -30,16 +42,46 @@
             "dest": "/etc/glance/glance-cache.conf",
             "owner": "glance",
             "perm": "0600"
+        }{% endif %}{% if glance_enable_interoperable_image_import | bool %},
+        {
+            "source": "{{ container_config_directory }}/glance-image-import.conf",
+            "dest": "/etc/glance/glance.conf.d/glance-image-import.conf",
+            "owner": "glance",
+            "perm": "0600"
+        }{% endif %}{% if glance_enable_property_protection | bool %},
+        {
+            "source": "{{ container_config_directory }}/property-protections-rules.conf",
+            "dest": "/etc/glance/property-protections-rules.conf",
+            "owner": "glance",
+            "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
         }{% endif %}
     ],
-    "permissions": [
+    "directories": [
         {
-            "path": "/var/lib/glance",
-            "owner": "glance:glance",
-            "recurse": true
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
         },
         {
             "path": "/var/log/kolla/glance",
+            "owner": "glance:kolla",
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/glance/*.log",
+            "owner": "glance:kolla",
+            "perm": "0664"
+        },
+        {
+            "path": "/var/lib/glance",
             "owner": "glance:glance",
             "recurse": true
         }

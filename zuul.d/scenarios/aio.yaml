@@ -1,0 +1,152 @@
+---
+- job:
+    parent: kolla-ansible-base
+    name: kolla-ansible-aio-base
+    files: !inherit
+      - ^ansible/post-deploy.yml
+      - ^ansible/group_vars/all/(common|cron|fluentd|glance|haproxy|heat|horizon|keepalived|keystone|loadbalancer|neutron|nova|nova-cell|openvswitch|placement|proxysql|rabbitmq).yml
+      - ^ansible/group_vars/baremetal/ansible-python-interpreter.yml
+      - ^ansible/(action_plugins|filter_plugins|library|module_utils)/
+      - ^ansible/roles/(cron|fluentd|glance|haproxy-config|heat|horizon|keystone|kolla_toolbox|loadbalancer|loadbalancer-config|neutron|nova|nova-cell|openvswitch|placement|proxysql-config|rabbitmq|service.*)/
+      - ^ansible/templates/
+      - ^kolla_ansible/
+      - ^roles/kolla-ansible-(deploy|tempest|test-dashboard|reconfigure)/
+      - ^tests/testinfra/test_horizon.py
+      - ^tools/init-runonce
+
+- job:
+    name: kolla-ansible-debian-trixie
+    parent: kolla-ansible-aio-base
+    nodeset: kolla-ansible-debian-trixie-16GB
+    voting: false
+
+- job:
+    name: kolla-ansible-debian-trixie-aarch64
+    parent: kolla-ansible-debian-trixie
+    nodeset: kolla-ansible-debian-trixie-aarch64-16GB
+    timeout: 10800
+    vars:
+      kolla_build_images: true
+    voting: false
+
+- job:
+    name: kolla-ansible-debian-trixie-aarch64-podman
+    parent: kolla-ansible-debian-trixie-aarch64
+    nodeset: kolla-ansible-debian-trixie-aarch64-16GB
+    timeout: 10800
+    vars:
+      container_engine: podman
+      kolla_build_images: true
+    voting: false
+
+- job:
+    name: kolla-ansible-debian-trixie-podman
+    parent: kolla-ansible-debian-trixie
+    nodeset: kolla-ansible-debian-trixie-16GB
+    vars:
+      container_engine: podman
+
+- job:
+    name: kolla-ansible-debian-trixie-upgrade
+    parent: kolla-ansible-debian-trixie
+    nodeset: kolla-ansible-debian-trixie-16GB
+    timeout: 10800
+
+- job:
+    name: kolla-ansible-debian-trixie-aarch64-upgrade
+    parent: kolla-ansible-debian-trixie-upgrade
+    nodeset: kolla-ansible-debian-trixie-aarch64-16GB
+    voting: false
+
+- job:
+    name: kolla-ansible-debian-trixie-upgrade-slurp
+    parent: kolla-ansible-debian-trixie-upgrade
+    nodeset: kolla-ansible-debian-trixie-16GB
+    timeout: 10800
+
+- job:
+    name: kolla-ansible-rocky-10
+    parent: kolla-ansible-aio-base
+    nodeset: kolla-ansible-rocky-10-16GB
+
+- job:
+    name: kolla-ansible-rocky-10-upgrade
+    parent: kolla-ansible-aio-base
+    nodeset: kolla-ansible-rocky-10-16GB
+    timeout: 10800
+
+- job:
+    name: kolla-ansible-rocky-10-upgrade-slurp
+    parent: kolla-ansible-rocky-10-upgrade
+    nodeset: kolla-ansible-rocky-10-16GB
+    timeout: 10800
+
+- job:
+    name: kolla-ansible-rocky-10-podman
+    parent: kolla-ansible-rocky-10
+    nodeset: kolla-ansible-rocky-10-16GB
+    vars:
+      container_engine: podman
+
+- job:
+    name: kolla-ansible-ubuntu-noble
+    parent: kolla-ansible-aio-base
+    nodeset: kolla-ansible-ubuntu-noble-16GB
+
+- job:
+    name: kolla-ansible-ubuntu-noble-aarch64
+    parent: kolla-ansible-ubuntu-noble
+    nodeset: kolla-ansible-ubuntu-noble-aarch64-16GB
+    voting: false
+
+- job:
+    name: kolla-ansible-ubuntu-noble-podman
+    parent: kolla-ansible-ubuntu-noble
+    nodeset: kolla-ansible-ubuntu-noble-16GB
+    vars:
+      container_engine: podman
+
+- job:
+    name: kolla-ansible-ubuntu-noble-upgrade
+    parent: kolla-ansible-aio-base
+    nodeset: kolla-ansible-ubuntu-noble-16GB
+    timeout: 10800
+
+- job:
+    name: kolla-ansible-ubuntu-noble-upgrade-slurp
+    parent: kolla-ansible-aio-base
+    nodeset: kolla-ansible-ubuntu-noble-16GB
+    timeout: 10800
+
+- project-template:
+    name: kolla-ansible-scenario-aio
+    description: |
+      Runs Kolla-Ansible AIO scenario jobs.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie
+        - kolla-ansible-debian-trixie-podman
+        - kolla-ansible-debian-trixie-upgrade
+        - kolla-ansible-rocky-10
+        - kolla-ansible-rocky-10-upgrade
+        - kolla-ansible-rocky-10-podman
+        - kolla-ansible-ubuntu-noble
+        - kolla-ansible-ubuntu-noble-podman
+        - kolla-ansible-ubuntu-noble-upgrade
+    gate:
+      jobs:
+        - kolla-ansible-debian-trixie
+        - kolla-ansible-debian-trixie-podman
+        - kolla-ansible-debian-trixie-upgrade
+        - kolla-ansible-rocky-10
+        - kolla-ansible-rocky-10-upgrade
+        - kolla-ansible-rocky-10-podman
+        - kolla-ansible-ubuntu-noble
+        - kolla-ansible-ubuntu-noble-upgrade
+        - kolla-ansible-ubuntu-noble-podman
+    experimental:
+      jobs:
+        - kolla-ansible-debian-trixie-aarch64
+        - kolla-ansible-debian-trixie-aarch64-podman
+        - kolla-ansible-debian-trixie-aarch64-upgrade
+        - kolla-ansible-ubuntu-noble-aarch64

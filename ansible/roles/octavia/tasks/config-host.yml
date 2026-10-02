@@ -1,0 +1,7 @@
+---
+- name: Include tasks from hm-interface.yml
+  ansible.builtin.include_tasks: hm-interface.yml
+  when:
+    - octavia_auto_configure | bool
+    - octavia_network_type == "tenant"
+    - inventory_hostname in groups[octavia_services['octavia-health-manager']['group']]

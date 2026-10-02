@@ -1,0 +1,4 @@
+---
+- name: Check neutron containers
+  ansible.builtin.import_role:
+    name: service-check-containers

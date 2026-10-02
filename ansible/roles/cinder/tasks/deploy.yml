@@ -1,25 +1,19 @@
 ---
-- include_tasks: register.yml
-  when: inventory_hostname in groups['cinder-api']
+- name: Register cinder in Keystone
+  ansible.builtin.import_tasks: register.yml
 
-- include_tasks: config.yml
-  when: inventory_hostname in groups['ceph-mon'] or
-        inventory_hostname in groups['cinder-api'] or
-        inventory_hostname in groups['cinder-volume'] or
-        inventory_hostname in groups['cinder-scheduler'] or
-        inventory_hostname in groups['cinder-backup']
+- name: Configure cinder
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: clone.yml
+- name: Check cinder containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone cinder repository
+  ansible.builtin.include_tasks: clone.yml
   when: cinder_dev_mode | bool
 
-- include_tasks: bootstrap.yml
-  when: inventory_hostname in groups['cinder-api']
+- name: Bootstrap cinder service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
-
-- include_tasks: check.yml
-  when: inventory_hostname in groups['cinder-api'] or
-        inventory_hostname in groups['cinder-volume'] or
-        inventory_hostname in groups['cinder-scheduler'] or
-        inventory_hostname in groups['cinder-backup']
+  ansible.builtin.meta: flush_handlers

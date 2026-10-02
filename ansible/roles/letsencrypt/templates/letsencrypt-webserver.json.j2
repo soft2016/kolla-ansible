@@ -1,0 +1,39 @@
+{% set letsencrypt_apache_dir = 'apache2/conf-enabled' if kolla_base_distro in ['ubuntu', 'debian'] else 'httpd/conf.d' %}
+{% set apache_binary = 'apache2' if kolla_base_distro in ['ubuntu', 'debian'] else 'httpd' %}
+{% set apache_user = 'www-data' if kolla_base_distro in ['ubuntu', 'debian'] else 'apache' %}
+{
+    "command": "/usr/sbin/{{ apache_binary }} -DFOREGROUND",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/letsencrypt-webserver.conf",
+            "dest": "/etc/{{ letsencrypt_apache_dir }}/letsencrypt-webserver.conf",
+            "owner": "letsencrypt",
+            "perm": "0600"
+        }{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/letsencrypt",
+            "owner": "letsencrypt:kolla",
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/letsencrypt/*.log",
+            "owner": "letsencrypt:kolla",
+            "perm": "0664"
+        }
+    ]
+}

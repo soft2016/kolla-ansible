@@ -1,66 +1,77 @@
 ---
+- name: Precheck ironic configuration
+  ansible.builtin.import_role:
+    name: service-precheck
+  vars:
+    service_precheck_services: "{{ ironic_services }}"
+    service_name: "{{ project_name }}"
+
 - name: Get container facts
+  become: true
   kolla_container_facts:
+    action: get_containers
+    container_engine: "{{ kolla_container_engine }}"
     name:
       - ironic_api
-      - ironic_inspector
-      - ironic_ipxe
+      - ironic_http
+      - ironic_prometheus_exporter
+  check_mode: false
   register: container_facts
 
 - name: Checking free port for Ironic API
-  wait_for:
+  ansible.builtin.wait_for:
     host: "{{ api_interface_address }}"
-    port: "{{ ironic_api_port }}"
+    port: "{{ ironic_api_listen_port }}"
     connect_timeout: 1
     timeout: 1
     state: stopped
   when:
-    - container_facts['ironic_api'] is not defined
+    - container_facts.containers['ironic_api'] is not defined
     - inventory_hostname in groups['ironic-api']
 
-- name: Checking free port for Ironic Inspector
-  wait_for:
+- name: Checking free port for Ironic HTTP server
+  ansible.builtin.wait_for:
     host: "{{ api_interface_address }}"
-    port: "{{ ironic_inspector_port }}"
+    port: "{{ ironic_http_port }}"
     connect_timeout: 1
     timeout: 1
     state: stopped
   when:
-    - container_facts['ironic_inspector'] is not defined
-    - inventory_hostname in groups['ironic-inspector']
+    - container_facts.containers['ironic_http'] is not defined
+    - inventory_hostname in groups['ironic-http']
 
-- name: Checking free port for Ironic iPXE
-  wait_for:
+- name: Checking free port for Ironic Prometheus Exporter
+  ansible.builtin.wait_for:
     host: "{{ api_interface_address }}"
-    port: "{{ ironic_ipxe_port }}"
+    port: "{{ ironic_prometheus_exporter_port }}"
     connect_timeout: 1
     timeout: 1
     state: stopped
   when:
-    - enable_ironic_ipxe | bool
-    - container_facts['ironic_ipxe'] is not defined
-    - inventory_hostname in groups['ironic-ipxe']
+    - enable_ironic_prometheus_exporter | bool
+    - container_facts.containers['ironic_prometheus_exporter'] is not defined
+    - inventory_hostname in groups['ironic-conductor']
 
-- name: Checking ironic-agent files exist for Ironic Inspector
-  local_action: stat path="{{ node_custom_config }}/ironic/{{ item }}"
-  run_once: True
+- name: Checking ironic-agent files exist for Ironic
+  ansible.builtin.stat:
+    path: "{{ ironic_agent_files_directory }}/ironic/{{ item }}"
+  delegate_to: localhost
+  run_once: true
   register: result
   failed_when: not result.stat.exists
   when:
-    # Only required when Ironic inspector is in use.
-    - groups['ironic-inspector'] | length > 0
-    - (not enable_ironic_ipxe | bool and inventory_hostname in groups['ironic-pxe']) or
-        (enable_ironic_ipxe | bool and inventory_hostname in groups['ironic-ipxe'])
-    - not enable_ironic_pxe_uefi | bool
-  with_items:
-    - "ironic-agent.kernel"
-    - "ironic-agent.initramfs"
+    # Only required when Ironic dnsmasq is in use.
+    - groups['ironic-dnsmasq'] | length > 0
+    - (not ironic_dnsmasq_serve_ipxe | bool and inventory_hostname in groups['ironic-tftp']) or
+        (ironic_dnsmasq_serve_ipxe | bool and inventory_hostname in groups['ironic-http'])
+  with_items: "{{ ironic_agent_files }}"
 
-- name: Ensure dnsmasq_dhcp_range configured for Ironic Dnsmasq
-  fail:
+- name: Ensure ironic_dnsmasq_dhcp_ranges is configured
+  ansible.builtin.fail:
     msg: >
-      ironic_dnsmasq_dhcp_range must be set when enable ironic
+      ironic_dnsmasq_dhcp_ranges must be a list
   connection: local
-  run_once: True
+  run_once: true
   when:
-    - ironic_dnsmasq_dhcp_range is none
+    - enable_ironic_dnsmasq | bool
+    - not ironic_dnsmasq_dhcp_ranges is sequence

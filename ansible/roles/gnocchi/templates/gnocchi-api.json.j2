@@ -1,7 +1,5 @@
-{% set gnocchi_cmd = 'apache2' if kolla_base_distro in ['ubuntu', 'debian'] else 'httpd' %}
-{% set gnocchi_dir = 'apache2/conf-enabled' if kolla_base_distro in ['ubuntu', 'debian'] else 'httpd/conf.d' %}
 {
-    "command": "{{ gnocchi_cmd }} -DFOREGROUND",
+    "command": "uwsgi /etc/gnocchi/gnocchi-api-uwsgi.ini",
     "config_files": [
         {
             "source": "{{ container_config_directory }}/gnocchi.conf",
@@ -10,8 +8,8 @@
             "perm": "0600"
         },
         {
-            "source": "{{ container_config_directory }}/wsgi-gnocchi.conf",
-            "dest": "/etc/{{ gnocchi_dir }}/wsgi-gnocchi.conf",
+            "source": "{{ container_config_directory }}/gnocchi-api-uwsgi.ini",
+            "dest": "/etc/gnocchi/gnocchi-api-uwsgi.ini",
             "owner": "gnocchi",
             "perm": "0600"
         }{% if gnocchi_policy_file is defined %},
@@ -22,28 +20,39 @@
             "perm": "0600"
         }{% endif %}{% if gnocchi_backend_storage == 'ceph' %},
         {
-            "source": "{{ container_config_directory }}/ceph.conf",
-            "dest": "/etc/ceph/ceph.conf",
+            "source": "{{ container_config_directory }}/ceph",
+            "dest": "/etc/ceph",
             "owner": "gnocchi",
             "perm": "0600"
-        },
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
         {
-            "source": "{{ container_config_directory }}/ceph.client.gnocchi.keyring",
-            "dest": "/etc/ceph/ceph.client.gnocchi.keyring",
-            "owner": "gnocchi",
-            "perm": "0600"
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
         }{% endif %}
-
     ],
-    "permissions": [
+    "directories": [
         {
-            "path": "/var/lib/gnocchi",
-            "owner": "gnocchi:gnocchi",
-            "recurse": true
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
         },
         {
             "path": "/var/log/kolla/gnocchi",
-            "owner": "gnocchi:kolla"
+            "owner": "gnocchi:kolla",
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/gnocchi/*.log",
+            "owner": "gnocchi:kolla",
+            "perm": "0664"
+        },
+        {
+            "path": "/var/lib/gnocchi",
+            "owner": "gnocchi:gnocchi"
         }
     ]
 }

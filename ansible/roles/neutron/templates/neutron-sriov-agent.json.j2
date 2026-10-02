@@ -12,20 +12,37 @@
             "dest": "/etc/neutron/plugins/ml2/sriov_agent.ini",
             "owner": "neutron",
             "perm": "0600"
+        }{% if neutron_policy_file is defined %},
+        {
+            "source": "{{ container_config_directory }}/{{ neutron_policy_file }}",
+            "dest": "/etc/neutron/{{ neutron_policy_file }}",
+            "owner": "neutron",
+            "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
         },
         {
-            "source": "{{ container_config_directory }}/policy.json",
-            "dest": "/etc/neutron/policy.json",
-            "owner": "neutron",
-            "perm": "0600",
-            "optional": true
+            "path": "/var/log/kolla/neutron",
+            "owner": "neutron:kolla",
+            "perm": "2775"
         }
     ],
     "permissions": [
         {
-            "path": "/var/log/kolla/neutron",
-            "owner": "neutron:neutron",
-            "recurse": true
+            "path": "/var/log/kolla/neutron/*.log",
+            "owner": "neutron:kolla",
+            "perm": "0664"
         },
         {
             "path": "/var/lib/neutron/kolla",

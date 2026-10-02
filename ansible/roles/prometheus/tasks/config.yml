@@ -1,120 +1,232 @@
 ---
 - name: Ensuring config directories exist
-  file:
+  become: true
+  ansible.builtin.file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
     owner: "{{ config_owner_user }}"
     group: "{{ config_owner_group }}"
     mode: "0770"
-  become: true
+  with_dict: "{{ prometheus_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: Copying over TLS certificates
+  ansible.builtin.include_tasks: copy-certs.yml
   when:
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ prometheus_services }}"
+    - prometheus_copy_certs | bool
 
 - name: Copying over config.json files
-  template:
+  become: true
+  ansible.builtin.template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
-  register: prometheus_config_jsons
-  when:
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ prometheus_services }}"
-  notify:
-    - Restart {{ item.key }} container
+    mode: "0660"
+  with_dict: "{{ prometheus_services | select_services_enabled_and_mapped_to_host }}"
 
 - name: Find custom prometheus alert rules files
-  local_action:
-    module: find
+  ansible.builtin.find:
     path: "{{ node_custom_config }}/prometheus/"
     pattern: "*.rules"
-  run_once: True
+  run_once: true
+  delegate_to: localhost
   register: prometheus_alert_rules
   when:
     - enable_prometheus_alertmanager | bool
 
 - name: Copying over custom prometheus alert rules files
+  become: true
   vars:
-    service: "{{ prometheus_services['prometheus-server']}}"
-  copy:
+    service: "{{ prometheus_services['prometheus-server'] }}"
+  ansible.builtin.copy:
     src: "{{ item.path }}"
     dest: "{{ node_config_directory }}/prometheus-server/{{ item.path | basename }}"
     mode: "0660"
-  register: prometheus_confs
   when:
-    - inventory_hostname in groups[service.group]
-    - service.enabled | bool and enable_prometheus_alertmanager | bool
+    - service | service_enabled_and_mapped_to_host
+    - enable_prometheus_alertmanager | bool
     - prometheus_alert_rules is defined and prometheus_alert_rules.files | length > 0
   with_items: "{{ prometheus_alert_rules.files }}"
-  notify:
-    - Restart prometheus-server container
+
+- name: Find prometheus common config overrides
+  ansible.builtin.find:
+    # NOTE(wszumski): Non-existent paths don't produce a failure
+    paths:
+      - "{{ node_custom_config }}/prometheus/prometheus.yml.d"
+    patterns: "*.yml"
+  delegate_to: localhost
+  register: prometheus_common_config_overrides_result
+  run_once: true
+
+- name: Find prometheus host config overrides
+  ansible.builtin.find:
+    # NOTE(wszumski): Non-existent paths don't produce a failure
+    paths:
+      - "{{ node_custom_config }}/prometheus/{{ inventory_hostname }}/prometheus.yml.d"
+    patterns: "*.yml"
+  delegate_to: localhost
+  register: prometheus_host_config_overrides_result
+  # NOTE(yoctozepto): this cannot be run_once
+  run_once: false
 
 - name: Copying over prometheus config file
+  become: true
   vars:
-    service: "{{ prometheus_services['prometheus-server']}}"
-  template:
-    src: "{{ item }}"
+    service: "{{ prometheus_services['prometheus-server'] }}"
+    common_overrides: "{{ prometheus_common_config_overrides_result.files | map(attribute='path') | list | sort }}"
+    host_overrides: "{{ prometheus_host_config_overrides_result.files | map(attribute='path') | list | sort }}"
+  merge_yaml:
+    sources: "{{ [item] + common_overrides + host_overrides }}"
     dest: "{{ node_config_directory }}/prometheus-server/prometheus.yml"
-  register: prometheus_confs
-  when:
-    - inventory_hostname in groups[service.group]
-    - service.enabled | bool
+    mode: "0660"
+    extend_lists: true
+  when: service | service_enabled_and_mapped_to_host
   with_first_found:
     - "{{ node_custom_config }}/prometheus/{{ inventory_hostname }}/prometheus.yml"
     - "{{ node_custom_config }}/prometheus/prometheus.yml"
     - "{{ role_path }}/templates/prometheus.yml.j2"
-  notify:
-    - Restart prometheus-server container
+
+- name: Copying over prometheus web config file
+  become: true
+  vars:
+    service: "{{ prometheus_services['prometheus-server'] }}"
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/prometheus-server/web.yml"
+    mode: "0600"
+  when: service | service_enabled_and_mapped_to_host
+  with_first_found:
+    - "{{ node_custom_config }}/prometheus/{{ inventory_hostname }}/web.yml"
+    - "{{ node_custom_config }}/prometheus/web.yml"
+    - "{{ role_path }}/templates/prometheus-web.yml.j2"
 
 - name: Copying over prometheus alertmanager config file
+  become: true
   vars:
-    service: "{{ prometheus_services['prometheus-alertmanager']}}"
-  template:
+    service: "{{ prometheus_services['prometheus-alertmanager'] }}"
+  ansible.builtin.template:
     src: "{{ item }}"
     dest: "{{ node_config_directory }}/prometheus-alertmanager/prometheus-alertmanager.yml"
-  register: prometheus_alertmanager_confs
-  when:
-    - inventory_hostname in groups[service.group]
-    - service.enabled | bool
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
   with_first_found:
     - "{{ node_custom_config }}/prometheus/{{ inventory_hostname }}/prometheus-alertmanager.yml"
     - "{{ node_custom_config }}/prometheus/prometheus-alertmanager.yml"
     - "{{ role_path }}/templates/prometheus-alertmanager.yml.j2"
-  notify:
-    - Restart prometheus-alertmanager container
+
+- name: Find custom Alertmanager alert notification templates
+  ansible.builtin.find:
+    path: "{{ node_custom_config }}/prometheus/"
+    pattern: "*.tmpl"
+  run_once: true
+  delegate_to: localhost
+  register: alertmanager_notification_templates
+  when:
+    - enable_prometheus_alertmanager | bool
+
+- name: Copying over custom Alertmanager alert notification templates
+  become: true
+  vars:
+    service: "{{ prometheus_services['prometheus-alertmanager'] }}"
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ node_config_directory }}/prometheus-alertmanager/{{ item.path | basename }}"
+    mode: "0660"
+  when:
+    - service | service_enabled_and_mapped_to_host
+    - alertmanager_notification_templates is defined and alertmanager_notification_templates.files | length > 0
+  with_items: "{{ alertmanager_notification_templates.files }}"
 
 - name: Copying over my.cnf for mysqld_exporter
+  become: true
   vars:
-    service: "{{ prometheus_services['prometheus-mysqld-exporter']}}"
+    service: "{{ prometheus_services['prometheus-mysqld-exporter'] }}"
   merge_configs:
     sources:
       - "{{ node_custom_config }}/prometheus-mysqld-exporter/{{ inventory_hostname }}/my.cnf"
       - "{{ node_custom_config }}/prometheus-mysqld-exporter/my.cnf"
       - "{{ role_path }}/templates/my.cnf.j2"
     dest: "{{ node_config_directory }}/prometheus-mysqld-exporter/my.cnf"
-  register: prometheus_conf_mycnf
-  when:
-    - inventory_hostname in groups[service.group]
-    - service.enabled | bool
-  notify:
-    - Restart prometheus-mysqld-exporter container
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
 
-- name: Check prometheus containers
+- name: Copying cloud config file for openstack exporter
   become: true
-  kolla_docker:
-    action: "compare_container"
-    common_options: "{{ docker_common_options }}"
-    name: "{{ item.value.container_name }}"
-    image: "{{ item.value.image }}"
-    pid_mode: "{{ item.value.pid_mode|default('') }}"
-    volumes: "{{ item.value.volumes }}"
-    dimensions: "{{ item.value.dimensions }}"
-  register: check_prometheus_containers
-  when:
-    - kolla_action != "config"
-    - inventory_hostname in groups[item.value.group]
-    - item.value.enabled | bool
-  with_dict: "{{ prometheus_services }}"
-  notify:
-    - Restart {{ item.key }} container
+  vars:
+    service: "{{ prometheus_services['prometheus-openstack-exporter'] }}"
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/prometheus-openstack-exporter/clouds.yml"
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
+  with_first_found:
+    - "{{ node_custom_config }}/prometheus-openstack-exporter/{{ inventory_hostname }}/clouds.yml"
+    - "{{ node_custom_config }}/prometheus-openstack-exporter/clouds.yml"
+    - "{{ role_path }}/templates/clouds.yml.j2"
+
+- name: Copying config file for blackbox exporter
+  become: true
+  vars:
+    service: "{{ prometheus_services['prometheus-blackbox-exporter'] }}"
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/prometheus-blackbox-exporter/prometheus-blackbox-exporter.yml"
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
+  with_first_found:
+    - "{{ node_custom_config }}/prometheus/{{ inventory_hostname }}/prometheus-blackbox-exporter.yml"
+    - "{{ node_custom_config }}/prometheus/prometheus-blackbox-exporter.yml"
+    - "{{ role_path }}/templates/prometheus-blackbox-exporter.yml.j2"
+
+- name: Copying config file for openstack network exporter
+  become: true
+  vars:
+    service: "{{ prometheus_services['prometheus-openstack-network-exporter'] }}"
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/prometheus-openstack-network-exporter/openstack-network-exporter.yaml"
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
+  with_first_found:
+    - "{{ node_custom_config }}/prometheus-openstack-network-exporter/{{ inventory_hostname }}/openstack-network-exporter.yaml"
+    - "{{ node_custom_config }}/prometheus-openstack-network-exporter/openstack-network-exporter.yaml"
+    - "{{ role_path }}/templates/openstack-network-exporter.yaml.j2"
+
+- name: Copy extra prometheus server config files
+  vars:
+    base: "{{ node_custom_config }}/prometheus/"
+    service: "{{ prometheus_services['prometheus-server'] }}"
+  when: service | service_enabled_and_mapped_to_host
+  block:
+    - name: Find extra prometheus server config files
+      ansible.builtin.find:
+        paths: "{{ node_custom_config }}/prometheus/extras/"
+        patterns: "*"
+        recurse: true
+      delegate_to: localhost
+      register: prometheus_config_extras_result
+      run_once: true
+
+    - name: Create subdirectories for extra config files
+      become: true
+      vars:
+        dirs: >-
+          {{ prometheus_config_extras_result.files | default([])
+          | map(attribute='path') | map('dirname') | unique
+          | map('relpath', base) | list }}
+      ansible.builtin.file:
+        path: "{{ node_config_directory }}/prometheus-server/{{ item }}"
+        state: "directory"
+        owner: "{{ config_owner_user }}"
+        group: "{{ config_owner_group }}"
+        mode: "0770"
+        recurse: true
+      with_items: "{{ dirs }}"
+
+    - name: Template extra prometheus server config files
+      become: true
+      vars:
+        relpath: "{{ item | relpath(base) }}"
+      ansible.builtin.template:
+        src: "{{ item }}"
+        dest: "{{ node_config_directory }}/prometheus-server/{{ relpath }}"
+        mode: "0660"
+      with_items: "{{ prometheus_config_extras_result.files | default([]) | map(attribute='path') | list }}"

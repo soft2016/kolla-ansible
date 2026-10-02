@@ -1,0 +1,98 @@
+---
+# We need to wait for all expected compute services to register before running
+# cells v2 host discovery. This includes virtualised compute services and
+# ironic compute services.
+# Work with --limit by including only hosts in ansible_play_batch.
+
+- name: Wait for compute services to register and discover hosts
+  vars:
+    # For virt, use ansible_facts.nodename rather than inventory_hostname, since this
+    # is similar to what nova uses internally as its default for the
+    # [DEFAULT] host config option.
+    virt_compute_service_hosts: >-
+      {{ virt_computes_in_batch |
+         map('extract', hostvars, ['ansible_facts', 'nodename']) |
+         list }}
+    ironic_compute_service_hosts: >-
+      {{ ironic_computes_in_batch |
+         map('extract', hostvars) |
+         json_query(
+           '{classic: [].nova_compute_ironic_custom_host || [].ansible_facts.hostname,
+             multi: [].group_names}') |
+         get_expected_ironic_compute_services(nova_multi_compute_ironic_config, nova_cell_compute_ironic_group) }}
+
+    expected_compute_service_hosts: "{{ virt_compute_service_hosts + ironic_compute_service_hosts }}"
+  block:
+    - name: Waiting for nova-compute services to register themselves
+      become: true
+      ansible.builtin.command: >
+        {{ kolla_container_engine }} exec kolla_toolbox openstack
+        --os-interface {{ openstack_interface }}
+        --os-auth-url {{ keystone_internal_url }}
+        --os-project-domain-name {{ default_project_domain_name }}
+        --os-project-name {{ keystone_admin_project }}
+        --os-username {{ keystone_admin_user }}
+        --os-password {{ keystone_admin_password }}
+        --os-identity-api-version 3
+        --os-user-domain-name {{ default_user_domain_name }}
+        --os-region-name {{ openstack_region_name }}
+        {% if openstack_cacert != '' %}--os-cacert {{ openstack_cacert }}{% endif %}
+        compute service list --format json --column Host --service nova-compute
+      register: nova_compute_services
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      retries: 20
+      delay: 10
+      until:
+        - nova_compute_services is success
+        # A list containing the 'Host' field of compute services that have
+        # registered themselves.  Don't exclude compute services that are disabled
+        # since these could have been explicitly disabled by the operator. While we
+        # could exclude services that are down, the nova-manage cell_v2
+        # discover_hosts does not do this so let's not block on it here.
+        - (nova_compute_services.stdout |
+           from_json |
+           map(attribute='Host') |
+           list)
+          is superset(expected_compute_service_hosts)
+      # Execute on one compute per cell, and delegate to a cell conductor.
+      when: inventory_hostname == all_computes_in_batch[0]
+      delegate_to: "{{ groups[nova_cell_conductor_group][0] }}"
+
+    # NOTE(mgoddard): Use a separate fail task to ensure we fail only those hosts
+    # that failed to register.
+    - name: Fail if nova-compute service failed to register
+      vars:
+        # 'Host' field of all registered compute services.
+        nova_compute_service_hosts: >-
+          {{ hostvars[all_computes_in_batch[0]].nova_compute_services.stdout |
+             from_json |
+             map(attribute='Host') |
+             list }}
+        # 'Host' field of failed compute services.
+        failed_compute_service_hosts: >-
+          {{ expected_compute_service_hosts | difference(nova_compute_service_hosts) | list }}
+        # Whether any compute services failed on this host.
+        ironic_compute_service_config_for_host:
+          classic: "{{ [nova_compute_ironic_custom_host | default(ansible_facts.hostname)] if inventory_hostname in ironic_computes_in_batch else [] }}"
+          multi: "{{ [group_names] }}"
+        expected_ironic_compute_services: >-
+          {{ ironic_compute_service_config_for_host | get_expected_ironic_compute_services(nova_multi_compute_ironic_config, nova_cell_compute_ironic_group) }}
+        any_failed_services: >-
+          {{ (ansible_facts.nodename | default()) in failed_compute_service_hosts or
+             expected_ironic_compute_services | intersect(failed_compute_service_hosts) | length > 0 }}
+
+      ansible.builtin.fail:
+        msg: >-
+          The following Nova compute services failed to register
+          themselves: {{ failed_compute_service_hosts | join(',') }}
+      when: >-
+        any_failed_services or
+        (nova_compute_registration_fatal | bool and
+         failed_compute_service_hosts | length > 0)
+
+- name: Include discover_computes.yml
+  ansible.builtin.include_tasks: discover_computes.yml
+  # Execute on one compute host per cell.
+  when: inventory_hostname == all_computes_in_batch[0]

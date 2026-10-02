@@ -1,0 +1,3 @@
+---
+- name: Check designate containers
+  ansible.builtin.import_tasks: check-containers.yml

@@ -1,1 +1,4 @@
 ---
+- name: Checking OVN-DPDK containers
+  ansible.builtin.import_role:
+    role: service-check

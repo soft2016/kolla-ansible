@@ -1,19 +1,22 @@
 ---
 - name: Ensuring the containers up
   become: true
-  kolla_docker:
+  kolla_container_facts:
     name: "{{ item.name }}"
-    action: "get_container_state"
+    action: "get_containers_state"
+    container_engine: "{{ kolla_container_engine }}"
   register: container_state
-  failed_when: container_state.Running == false
+  failed_when: container_state.states[item.name] != "running"
   when: inventory_hostname in groups[item.group]
   with_items:
     - { name: bifrost-deploy, group: bifrost-deploy }
 
-- include_tasks: config.yml
+- name: Configure bifrost
+  ansible.builtin.import_tasks: config.yml
 
 - name: Check the configs
-  command: docker exec {{ item.name }} /usr/local/bin/kolla_set_configs --check
+  become: true
+  ansible.builtin.command: "{{ kolla_container_engine }} exec {{ item.name }} /usr/local/bin/kolla_set_configs --check"
   changed_when: false
   failed_when: false
   register: check_results
@@ -26,9 +29,10 @@
 # just remove the container and start again
 - name: Containers config strategy
   become: true
-  kolla_docker:
+  kolla_container_facts:
     name: "{{ item.name }}"
-    action: "get_container_env"
+    action: "get_containers_env"
+    container_engine: "{{ kolla_container_engine }}"
   register: container_envs
   when: inventory_hostname in groups[item.group]
   with_items:
@@ -36,31 +40,40 @@
 
 - name: Remove the containers
   become: true
-  kolla_docker:
-    name: "{{ item[0]['name'] }}"
+  vars:
+    container_name: "{{ item[0]['name'] }}"
+    container_config_strategy: "{{ item[1].envs[container_name] }}"
+  kolla_container:
+    common_options: "{{ docker_common_options }}"
+    name: "{{ container_name }}"
     action: "remove_container"
   register: remove_containers
   when:
     - inventory_hostname in groups[item[0]['group']]
-    - config_strategy == "COPY_ONCE" or item[1]['KOLLA_CONFIG_STRATEGY'] == 'COPY_ONCE'
+    - config_strategy == "COPY_ONCE" or container_config_strategy == 'COPY_ONCE'
     - item[2]['rc'] == 1
   with_together:
     - [{ name: bifrost-deploy, group: bifrost-deploy }]
     - "{{ container_envs.results }}"
     - "{{ check_results.results }}"
 
-- include_tasks: start.yml
-  when: remove_containers.changed
+- name: Start bifrost containers
+  ansible.builtin.include_tasks: start.yml
+  when: remove_containers.changed  # noqa no-handler
 
 - name: Restart containers
   become: true
-  kolla_docker:
-    name: "{{ item[0]['name'] }}"
+  vars:
+    container_name: "{{ item[0]['name'] }}"
+    container_config_strategy: "{{ item[1].envs[container_name] }}"
+  kolla_container:
+    common_options: "{{ docker_common_options }}"
+    name: "{{ container_name }}"
     action: "restart_container"
   when:
     - inventory_hostname in groups[item[0]['group']]
     - config_strategy == 'COPY_ALWAYS'
-    - item[1]['KOLLA_CONFIG_STRATEGY'] != 'COPY_ONCE'
+    - container_config_strategy != 'COPY_ONCE'
     - item[2]['rc'] == 1
   with_together:
     - [{ name: bifrost-deploy, group: bifrost-deploy }]

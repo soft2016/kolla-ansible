@@ -1,0 +1,94 @@
+---
+- name: Ensuring config directories exist
+  become: true
+  ansible.builtin.file:
+    path: "{{ node_config_directory }}/{{ item.key }}"
+    state: "directory"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  with_dict: "{{ placement_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: Check if policies shall be overwritten
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  delegate_to: localhost
+  run_once: true
+  register: placement_policy
+  with_first_found:
+    - files: "{{ supported_policy_format_list }}"
+      paths:
+        - "{{ node_custom_config }}/placement/"
+      skip: true
+
+- name: Set placement policy file
+  ansible.builtin.set_fact:
+    placement_policy_file: "{{ placement_policy.results.0.stat.path | basename }}"
+    placement_policy_file_path: "{{ placement_policy.results.0.stat.path }}"
+  when:
+    - placement_policy.results | length > 0
+
+- name: Copying over TLS certificates
+  ansible.builtin.include_tasks: copy-certs.yml
+  when:
+    - placement_copy_certs | bool
+
+- name: Copying over config.json files for services
+  become: true
+  ansible.builtin.template:
+    src: "{{ item.key }}.json.j2"
+    dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
+    mode: "0660"
+  with_dict: "{{ placement_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: Copying over placement.conf
+  become: true
+  vars:
+    service_name: "{{ item.key }}"
+  merge_configs:
+    sources:
+      - "{{ role_path }}/templates/placement.conf.j2"
+      - "{{ node_custom_config }}/global.conf"
+      - "{{ node_custom_config }}/placement.conf"
+      - "{{ node_custom_config }}/placement/{{ item.key }}.conf"
+      - "{{ node_custom_config }}/placement/{{ inventory_hostname }}/placement.conf"
+    dest: "{{ node_config_directory }}/{{ item.key }}/placement.conf"
+    mode: "0660"
+  with_dict: "{{ placement_services | select_services_enabled_and_mapped_to_host }}"
+
+- name: "Configure uWSGI for Placement"
+  ansible.builtin.include_role:
+    name: service-uwsgi-config
+  vars:
+    project_services: "{{ placement_services }}"
+    service: "{{ placement_services['placement-api'] }}"
+    service_name: "placement-api"
+    service_uwsgi_config_http_port: "{{ placement_api_listen_port }}"
+    service_uwsgi_config_module: "{{ service.wsgi }}"
+    service_uwsgi_config_tls_backend: "{{ placement_enable_tls_backend | bool }}"
+    service_uwsgi_config_tls_cert: "/etc/placement/certs/placement-cert.pem"
+    service_uwsgi_config_tls_key: "/etc/placement/certs/placement-key.pem"
+    service_uwsgi_config_uid: "placement"
+    service_uwsgi_config_workers: "{{ placement_api_workers }}"
+  when:
+    - service | service_enabled_and_mapped_to_host
+
+- name: Copying over migrate-db.rc.j2 configuration
+  become: true
+  vars:
+    service: "{{ placement_services['placement-api'] }}"
+  ansible.builtin.template:
+    src: "migrate-db.rc.j2"
+    dest: "{{ node_config_directory }}/placement-api/migrate-db.rc"
+    mode: "0660"
+  when: service | service_enabled_and_mapped_to_host
+
+- name: Copying over existing policy file
+  become: true
+  ansible.builtin.template:
+    src: "{{ placement_policy_file_path }}"
+    dest: "{{ node_config_directory }}/{{ item.key }}/{{ placement_policy_file }}"
+    mode: "0660"
+  when:
+    - placement_policy_file is defined
+  with_dict: "{{ placement_services | select_services_enabled_and_mapped_to_host }}"

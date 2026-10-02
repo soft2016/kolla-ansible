@@ -1,0 +1,7 @@
+---
+- name: Check mariadb containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+# NOTE(yoctozepto): handlers prerequisite
+- name: Import tasks from lookup_cluster.yml
+  ansible.builtin.import_tasks: lookup_cluster.yml

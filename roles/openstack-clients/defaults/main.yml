@@ -1,0 +1,38 @@
+---
+openstack_clients_pip_packages:
+  - package: aodhclient
+    enabled: "{{ scenario == 'telemetry' }}"
+  - package: python-barbicanclient
+    enabled: "{{ scenario == 'nfv' }}"
+  - package: python-designateclient
+    enabled: "{{ scenario == 'magnum' }}"
+  - package: gnocchiclient
+    enabled: "{{ scenario == 'telemetry' }}"
+  - package: python-heatclient
+    enabled: true
+  - package: python-ironicclient
+    enabled: "{{ scenario in ['ironic', 'multi-compute-ironic'] }}"
+  - package: python-magnumclient
+    enabled: "{{ scenario == 'magnum' }}"
+  - package: python-neutronclient
+    enabled: "{{ scenario == 'ovn' }}"
+  - package: python-masakariclient
+    enabled: "{{ scenario == 'masakari' }}"
+  - package: python-mistralclient
+    enabled: "{{ scenario == 'nfv' }}"
+  - package: python-octaviaclient
+    enabled: "{{ scenario in ['octavia', 'ovn'] }}"
+  - package: python-openstackclient
+    enabled: true
+  - package: python-tackerclient
+    enabled: "{{ scenario == 'nfv' }}"
+  - package: python-troveclient
+    enabled: "{{ scenario == 'magnum' }}"
+
+openstack_clients_venv_base: "{{ ansible_user_dir }}"
+openstack_clients_venv_name: "openstackclient-venv"
+openstack_clients_venv_path: "{{ openstack_clients_venv_base }}/{{ openstack_clients_venv_name }}"
+
+openstack_clients_upper_constraints_file: >-
+  {{ upper_constraints_file | default(ansible_env.HOME +
+  '/src/opendev.org/openstack/requirements/upper-constraints.txt') }}

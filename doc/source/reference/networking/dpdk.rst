@@ -49,7 +49,7 @@ config and regenerating your grub file.
 
 As dpdk is a userspace networking library it requires userspace compatible
 drivers to be able to control the physical interfaces on the platform.
-dpdk technically support 3 kernel drivers ``igb_uio``,``uio_pci_generic``, and
+dpdk technically support 3 kernel drivers ``igb_uio``, ``uio_pci_generic`` and
 ``vfio_pci``.
 While it is technically possible to use all 3 only ``uio_pci_generic`` and
 ``vfio_pci`` are recommended for use with kolla. ``igb_uio`` is BSD licenced
@@ -71,10 +71,15 @@ To enable ovs-dpdk, add the following configuration to
 .. code-block:: yaml
 
    ovs_datapath: "netdev"
-   enable_ovs_dpdk: yes
-   enable_openvswitch: yes
+   enable_ovs_dpdk: true
+   enable_openvswitch: true
    tunnel_interface: "dpdk_bridge"
    neutron_bridge_name: "dpdk_bridge"
+
+.. note::
+
+   Kolla doesn't support ovs-dpdk for RHEL-based distros due to the lack
+   of a suitable package.
 
 Unlike standard Open vSwitch deployments, the interface specified by
 neutron_external_interface should have an ip address assigned.
@@ -87,8 +92,8 @@ the use of - in a variable name it is not possible to use the default
 br-ex name for the neutron_bridge_name or tunnel_interface.
 
 At present, the tunnel interface ip is configured using network manager on
-on ubuntu and systemd on centos family operating systems. systemd is used
-to work around a limitation of the centos network manager implementation which
+on ubuntu and systemd on rocky operating systems. systemd is used
+to work around a limitation of the rocky network manager implementation which
 does not consider the creation of an ovs bridge to be a hotplug event. In
 the future, a new config option will be introduced to allow systemd to be used
 on all host distros for those who do not wish to enable the network manager

@@ -1,0 +1,15 @@
+---
+- name: Bootstrap hacluster service
+  ansible.builtin.import_tasks: bootstrap.yml
+
+- name: Configure hacluster
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check hacluster containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Import tasks from bootstrap_service.yml
+  ansible.builtin.import_tasks: bootstrap_service.yml

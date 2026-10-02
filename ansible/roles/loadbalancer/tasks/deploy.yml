@@ -1,0 +1,14 @@
+---
+- name: Import tasks from config-host.yml
+  ansible.builtin.import_tasks: config-host.yml
+
+- name: Configure loadbalancer
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check loadbalancer containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+# NOTE(yoctozepto): haproxy role handlers should not be flushed early.
+# site.yml handles all haproxy things in a dedicated play.
+# This is to avoid extra haproxy service restart.
+# See: https://bugs.launchpad.net/kolla-ansible/+bug/1875228

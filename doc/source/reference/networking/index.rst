@@ -4,7 +4,7 @@ Networking
 
 Kolla deploys Neutron by default as OpenStack networking component.
 This section describes configuring and running Neutron extensions like
-LBaaS, Networking-SFC, QoS, and so on.
+Networking-SFC, QoS, and so on.
 
 
 .. toctree::
@@ -12,7 +12,7 @@ LBaaS, Networking-SFC, QoS, and so on.
 
    designate-guide
    dpdk
+   neutron
    neutron-extensions
-   opendaylight
-   provider-networks
+   octavia
    sriov

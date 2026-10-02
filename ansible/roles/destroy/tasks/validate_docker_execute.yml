@@ -1,3 +1,5 @@
 ---
 - name: Ensure the docker service is running
-  script: ../tools/validate-docker-execute.sh
+  environment:
+    CONTAINER_ENGINE: "{{ kolla_container_engine }}"
+  ansible.builtin.script: ../tools/validate-docker-execute.sh

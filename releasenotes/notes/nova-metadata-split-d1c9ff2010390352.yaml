@@ -1,0 +1,5 @@
+---
+features:
+  - |
+    The ``nova-metadata`` service now runs in its own container in preparation
+    for the uWSGI migration.

@@ -1,0 +1,71 @@
+---
+- job:
+    name: kolla-ansible-mariadb-base
+    parent: kolla-ansible-base
+    voting: true
+    files: !inherit
+      - ^ansible/group_vars/all/mariadb.yml
+      - ^ansible/roles/(loadbalancer|loadbalancer-config|mariadb|proxysql-config)/
+      - ^tests/templates/mariadb-overrides.j2
+      - ^tests/test-mariadb.sh
+    vars:
+      scenario: mariadb
+      scenario_images_core:
+        - ^cron
+        - ^fluentd
+        - ^haproxy
+        - ^keepalived
+        - ^kolla-toolbox
+        - ^mariadb
+        - ^proxysql
+
+- job:
+    name: kolla-ansible-debian-trixie-mariadb
+    parent: kolla-ansible-mariadb-base
+    nodeset: kolla-ansible-debian-trixie-multi-16GB
+
+- job:
+    name: kolla-ansible-debian-trixie-mariadb-upgrade
+    parent: kolla-ansible-debian-trixie-mariadb
+    nodeset: kolla-ansible-debian-trixie-multi-16GB
+
+- job:
+    name: kolla-ansible-rocky-10-mariadb
+    parent: kolla-ansible-mariadb-base
+    nodeset: kolla-ansible-rocky-10-multi-16GB
+
+- job:
+    name: kolla-ansible-rocky-10-mariadb-upgrade
+    parent: kolla-ansible-mariadb-base
+    nodeset: kolla-ansible-rocky-10-multi-16GB
+
+- job:
+    name: kolla-ansible-ubuntu-noble-mariadb
+    parent: kolla-ansible-mariadb-base
+    nodeset: kolla-ansible-ubuntu-noble-multi-8GB
+
+- job:
+    name: kolla-ansible-ubuntu-noble-mariadb-upgrade
+    parent: kolla-ansible-mariadb-base
+    nodeset: kolla-ansible-ubuntu-noble-multi-8GB
+
+- project-template:
+    name: kolla-ansible-scenario-mariadb
+    description: |
+      Runs Kolla-Ansible MariaDB scenario jobs.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie-mariadb
+        - kolla-ansible-debian-trixie-mariadb-upgrade
+        - kolla-ansible-rocky-10-mariadb
+        - kolla-ansible-rocky-10-mariadb-upgrade
+        - kolla-ansible-ubuntu-noble-mariadb
+        - kolla-ansible-ubuntu-noble-mariadb-upgrade
+    gate:
+      jobs:
+        - kolla-ansible-debian-trixie-mariadb
+        - kolla-ansible-debian-trixie-mariadb-upgrade
+        - kolla-ansible-rocky-10-mariadb
+        - kolla-ansible-rocky-10-mariadb-upgrade
+        - kolla-ansible-ubuntu-noble-mariadb
+        - kolla-ansible-ubuntu-noble-mariadb-upgrade

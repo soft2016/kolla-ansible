@@ -1,55 +1,164 @@
 ---
-- name: Ensuring config directories exist
-  become: true
-  file:
-    path: "{{ node_config_directory }}/{{ item }}"
+- name: Ensuring private internal directory exist
+  ansible.builtin.file:
+    path: "{{ certificates_internal_dir }}"
     state: "directory"
-    recurse: yes
-  with_items:
-    - "certificates/private"
+    mode: "0770"
 
-- name: Creating SSL configuration file
-  become: true
-  template:
-    src: "{{ item }}.j2"
-    dest: "{{ node_config_directory }}/certificates/{{ item }}"
-  with_items:
-    - "openssl-kolla.cnf"
+- name: Ensuring private external directory exist
+  ansible.builtin.file:
+    path: "{{ certificates_external_dir }}"
+    state: "directory"
+    mode: "0770"
 
-- name: Creating Key
-  become: true
-  command: creates="{{ item }}" openssl genrsa -out {{ item }}
-  with_items:
-    - "{{ node_config_directory }}/certificates/private/haproxy.key"
+- name: Generate external SSL certificates
+  when:
+    - letsencrypt_managed_certs == 'internal' or letsencrypt_managed_certs == '' or database_enable_tls_internal | bool
+    - kolla_enable_tls_external | bool or database_enable_tls_internal | bool
+  block:
+    - name: Creating external Server Certificate key
+      community.crypto.openssl_privatekey:
+        path: "{{ certificates_external_dir }}/external.key"
+        mode: "0660"
+        size: 2048
+        type: RSA
 
-- name: Setting permissions on key
-  become: true
-  file:
-    path: "{{ node_config_directory }}/certificates/private/haproxy.key"
-    mode: 0600
-    state: file
+    - name: Creating external Server Certificate signing request
+      vars:
+        _san:
+          - "{{ ('DNS:' ~ kolla_external_fqdn) if kolla_external_fqdn != kolla_external_vip_address }}"
+          - "IP:{{ kolla_external_vip_address }}"
+      community.crypto.openssl_csr:
+        path: "{{ certificates_external_dir }}/external.csr"
+        country_name: "US"
+        digest: "sha256"
+        locality_name: "RTP"
+        organizational_unit_name: "kolla"
+        privatekey_path: "{{ certificates_external_dir }}/external.key"
+        state_or_province_name: "NC"
+        subject_alt_name: "{{ _san | select() }}"
 
-- name: Creating Server Certificate
-  become: true
-  command: creates="{{ item }}" openssl req -new -nodes -sha256 -x509 \
-    -subj "/C=US/ST=NC/L=RTP/O=kolla/CN={{ kolla_external_fqdn }}" \
-    -config {{ node_config_directory }}/certificates/openssl-kolla.cnf \
-    -days 3650 \
-    -extensions v3_req \
-    -key {{ node_config_directory }}/certificates/private/haproxy.key \
-    -out {{ item }}
-  with_items:
-    - "{{ node_config_directory }}/certificates/private/haproxy.crt"
+    - name: Create external Server Certificate from CSR
+      community.crypto.x509_certificate:
+        path: "{{ certificates_external_dir }}/external.crt"
+        csr_path: "{{ certificates_external_dir }}/external.csr"
+        ownca_digest: "sha256"
+        ownca_not_after: "+365d"
+        ownca_path: "{{ certificates_root_dir }}/root.crt"
+        ownca_privatekey_path: "{{ certificates_root_dir }}/root.key"
+        privatekey_path: "{{ certificates_external_dir }}/external.key"
+        provider: ownca
 
-- name: Creating CA Certificate File
-  become: true
-  copy:
-    src: "{{ node_config_directory }}/certificates/private/haproxy.crt"
-    dest: "{{ node_config_directory }}/certificates/haproxy-ca.crt"
+- name: Creating external Server PEM File
+  ansible.builtin.assemble:
+    regexp: \.(crt|key)$
+    src: "{{ certificates_external_dir }}"
+    dest: "{{ kolla_external_fqdn_cert }}"
+    mode: "0660"
+  when:
+    - letsencrypt_managed_certs == 'internal' or letsencrypt_managed_certs == ''
+    - kolla_enable_tls_external | bool
 
-- name: Creating Server PEM File
-  become: true
-  assemble:
-    src: "{{ node_config_directory }}/certificates/private"
-    dest: "{{ node_config_directory }}/certificates/haproxy.pem"
-    mode: 0600
+# ProxySQL frontend TLS (database internal TLS) needs separate CA file
+- name: Copy CA certificate for ProxySQL
+  ansible.builtin.copy:
+    src: "{{ certificates_root_dir }}/root.crt"
+    dest: "{{ kolla_certificates_dir }}/proxysql-ca.pem"
+    mode: "0660"
+  when: database_enable_tls_internal | bool
+
+- name: Copy external certificates for ProxySQL
+  when:
+    - database_enable_tls_internal | bool
+    - kolla_same_external_internal_vip | bool
+  block:
+    - name: Copy Certificate for ProxySQL
+      ansible.builtin.copy:
+        src: "{{ certificates_external_dir }}/external.crt"
+        dest: "{{ kolla_certificates_dir }}/proxysql-cert.pem"
+        mode: "0660"
+
+    - name: Copy Key for ProxySQL
+      ansible.builtin.copy:
+        src: "{{ certificates_external_dir }}/external.key"
+        dest: "{{ kolla_certificates_dir }}/proxysql-key.pem"
+        mode: "0660"
+
+- name: Copy the external PEM file to be the internal when internal + external are same network
+  ansible.builtin.copy:
+    src: "{{ kolla_external_fqdn_cert }}"
+    dest: "{{ kolla_internal_fqdn_cert }}"
+    mode: "0660"
+    remote_src: true
+  when:
+    - letsencrypt_managed_certs == 'external' or letsencrypt_managed_certs == ''
+    - kolla_enable_tls_external | bool
+    - kolla_enable_tls_internal | bool
+    - kolla_same_external_internal_vip | bool
+
+- name: Generate internal SSL certificates
+  when:
+    - letsencrypt_managed_certs == 'external' or letsencrypt_managed_certs == '' or database_enable_tls_internal | bool
+    - kolla_enable_tls_internal | bool or database_enable_tls_internal | bool
+    - not kolla_same_external_internal_vip | bool
+  block:
+    - name: Creating internal Server Certificate key
+      community.crypto.openssl_privatekey:
+        path: "{{ certificates_internal_dir }}/internal.key"
+        mode: "0660"
+        size: 2048
+        type: RSA
+
+    - name: Creating internal Server Certificate signing request
+      vars:
+        _san:
+          - "{{ ('DNS:' ~ kolla_internal_fqdn) if kolla_internal_fqdn != kolla_internal_vip_address }}"
+          - "IP:{{ kolla_internal_vip_address }}"
+      community.crypto.openssl_csr:
+        path: "{{ certificates_internal_dir }}/internal.csr"
+        country_name: "US"
+        digest: "sha256"
+        locality_name: "RTP"
+        organizational_unit_name: "kolla"
+        privatekey_path: "{{ certificates_internal_dir }}/internal.key"
+        state_or_province_name: "NC"
+        subject_alt_name: "{{ _san | select() }}"
+
+    - name: Create internal Server Certificate from CSR
+      community.crypto.x509_certificate:
+        path: "{{ certificates_internal_dir }}/internal.crt"
+        csr_path: "{{ certificates_internal_dir }}/internal.csr"
+        ownca_digest: "sha256"
+        ownca_not_after: "+365d"
+        ownca_path: "{{ certificates_root_dir }}/root.crt"
+        ownca_privatekey_path: "{{ certificates_root_dir }}/root.key"
+        privatekey_path: "{{ certificates_internal_dir }}/internal.key"
+        provider: ownca
+
+- name: Creating internal Server PEM File
+  ansible.builtin.assemble:
+    regexp: \.(crt|key)$
+    src: "{{ certificates_internal_dir }}"
+    dest: "{{ kolla_internal_fqdn_cert }}"
+    mode: "0660"
+  when:
+    - letsencrypt_managed_certs == 'external' or letsencrypt_managed_certs == ''
+    - kolla_enable_tls_internal | bool
+    - not kolla_same_external_internal_vip | bool
+
+- name: Copy internal certificates for ProxySQL
+  when:
+    - database_enable_tls_internal | bool
+    - not kolla_same_external_internal_vip | bool
+  block:
+    - name: Copy Certificate for ProxySQL
+      ansible.builtin.copy:
+        src: "{{ certificates_internal_dir }}/internal.crt"
+        dest: "{{ kolla_certificates_dir }}/proxysql-cert.pem"
+        mode: "0660"
+
+    - name: Copy Key for ProxySQL
+      ansible.builtin.copy:
+        src: "{{ certificates_internal_dir }}/internal.key"
+        dest: "{{ kolla_certificates_dir }}/proxysql-key.pem"
+        mode: "0660"

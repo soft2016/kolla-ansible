@@ -1,147 +1,121 @@
 ---
-project_name: "cinder"
-
 cinder_services:
   cinder-api:
     container_name: cinder_api
     group: cinder-api
     enabled: true
     image: "{{ cinder_api_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/cinder-api/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/cinder/cinder:/var/lib/kolla/venv/lib/python2.7/site-packages/cinder' if cinder_dev_mode | bool else '' }}"
+    volumes: "{{ cinder_api_default_volumes + cinder_api_extra_volumes }}"
     dimensions: "{{ cinder_api_dimensions }}"
+    healthcheck: "{{ cinder_api_healthcheck }}"
+    wsgi: "cinder.wsgi.api:application"
     haproxy:
       cinder_api:
         enabled: "{{ enable_cinder }}"
         mode: "http"
         external: false
         port: "{{ cinder_api_port }}"
+        listen_port: "{{ cinder_api_listen_port }}"
+        tls_backend: "{{ cinder_enable_tls_backend }}"
+        backend_http_extra:
+          - "option httpchk GET /healthcheck"
+          - "http-check expect status 200"
       cinder_api_external:
         enabled: "{{ enable_cinder }}"
         mode: "http"
         external: true
-        port: "{{ cinder_api_port }}"
+        external_fqdn: "{{ cinder_external_fqdn }}"
+        port: "{{ cinder_api_public_port }}"
+        listen_port: "{{ cinder_api_listen_port }}"
+        tls_backend: "{{ cinder_enable_tls_backend }}"
+        backend_http_extra:
+          - "option httpchk GET /healthcheck"
+          - "http-check expect status 200"
   cinder-scheduler:
     container_name: cinder_scheduler
     group: cinder-scheduler
     enabled: true
     image: "{{ cinder_scheduler_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/cinder-scheduler/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/cinder/cinder:/var/lib/kolla/venv/lib/python2.7/site-packages/cinder' if cinder_dev_mode | bool else '' }}"
+    volumes: "{{ cinder_scheduler_default_volumes + cinder_scheduler_extra_volumes }}"
     dimensions: "{{ cinder_scheduler_dimensions }}"
+    healthcheck: "{{ cinder_scheduler_healthcheck }}"
   cinder-volume:
     container_name: cinder_volume
-    group: cinder-volume
+    group: >-
+      {{ 'cinder-volume-multiple' if (cinder_enabled_backends | length > 1 and enable_cinder_backend_lvm | bool) else
+         'cinder-volume-lvm' if enable_cinder_backend_lvm | bool else
+         'cinder-volume' }}
     enabled: true
     image: "{{ cinder_volume_image_full }}"
-    privileged: True
+    privileged: true
     ipc_mode: "host"
-    volumes:
-      - "{{ node_config_directory }}/cinder-volume/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/dev/:/dev/"
-      - "/lib/modules:/lib/modules:ro"
-      - "/run/:/run/:shared"
-      - "cinder:/var/lib/cinder"
-      - "{% if enable_iscsid | bool %}iscsi_info:/etc/iscsi{% endif %}"
-      - "{% if enable_cinder_backend_lvm | bool and cinder_iscsi_helper == 'lioadm' %}target_config:/etc/target{% endif %}"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/cinder/cinder:/var/lib/kolla/venv/lib/python2.7/site-packages/cinder' if cinder_dev_mode | bool else '' }}"
+    tmpfs: "{{ cinder_volume_tmpfs }}"
+    volumes: "{{ cinder_volume_default_volumes + cinder_volume_extra_volumes + lookup('vars', 'run_default_volumes_' + kolla_container_engine) }}"
     dimensions: "{{ cinder_volume_dimensions }}"
+    healthcheck: "{{ cinder_volume_healthcheck }}"
   cinder-backup:
     container_name: cinder_backup
-    group: cinder-backup
+    group: >-
+      {{ 'cinder-backup-multiple' if (cinder_enabled_backends | length > 1 and enable_cinder_backend_lvm | bool) else
+         'cinder-backup-lvm' if enable_cinder_backend_lvm | bool else
+         'cinder-backup' }}
     enabled: "{{ enable_cinder_backup | bool }}"
     image: "{{ cinder_backup_image_full }}"
-    privileged: True
-    volumes:
-      - "{{ node_config_directory }}/cinder-backup/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/dev/:/dev/"
-      - "/run/:/run/:shared"
-      - "cinder:/var/lib/cinder"
-      - "{% if enable_iscsid | bool %}iscsi_info:/etc/iscsi{% endif %}"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/cinder/cinder:/var/lib/kolla/venv/lib/python2.7/site-packages/cinder' if cinder_dev_mode | bool else '' }}"
+    privileged: true
+    ipc_mode: "host"
+    volumes: "{{ cinder_backup_default_volumes + cinder_backup_extra_volumes + lookup('vars', 'run_default_volumes_' + kolla_container_engine) }}"
     dimensions: "{{ cinder_backup_dimensions }}"
+    healthcheck: "{{ cinder_backup_healthcheck }}"
 
 ####################
-# Ceph
+# Config Validate
 ####################
-ceph_cinder_pool_type: "{{ ceph_pool_type }}"
-ceph_cinder_cache_mode: "{{ ceph_cache_mode }}"
-ceph_cinder_backup_pool_type: "{{ ceph_pool_type }}"
-ceph_cinder_backup_cache_mode: "{{ ceph_cache_mode }}"
-
-# Due to Ansible issues on include, you cannot override these variables. Please
-# override the variables they reference instead.
-cinder_pool_name: "{{ ceph_cinder_pool_name }}"
-cinder_pool_type: "{{ ceph_cinder_pool_type }}"
-cinder_cache_mode: "{{ ceph_cinder_cache_mode }}"
-cinder_pool_pg_num: "{{ ceph_pool_pg_num }}"
-cinder_pool_pgp_num: "{{ ceph_pool_pgp_num }}"
-
-cinder_backup_pool_name: "{{ ceph_cinder_backup_pool_name }}"
-cinder_backup_pool_type: "{{ ceph_cinder_backup_pool_type }}"
-cinder_backup_cache_mode: "{{ ceph_cinder_backup_cache_mode }}"
-cinder_backup_pool_pg_num: "{{ ceph_pool_pg_num }}"
-cinder_backup_pool_pgp_num: "{{ ceph_pool_pgp_num }}"
-
-ceph_client_cinder_keyring_caps:
-  mon: 'allow r'
-  osd: >-
-    allow class-read object_prefix rbd_children,
-    allow rwx pool={{ ceph_cinder_pool_name }},
-    allow rwx pool={{ ceph_cinder_pool_name }}-cache,
-    allow rwx pool={{ ceph_nova_pool_name }},
-    allow rwx pool={{ ceph_nova_pool_name }}-cache,
-    allow rx pool={{ ceph_glance_pool_name }},
-    allow rx pool={{ ceph_glance_pool_name }}-cache
-
-ceph_client_cinder_backup_keyring_caps:
-  mon: 'allow r'
-  osd: >-
-    allow class-read object_prefix rbd_children,
-    allow rwx pool={{ ceph_cinder_backup_pool_name }},
-    allow rwx pool={{ ceph_cinder_backup_pool_name }}-cache
-
+cinder_config_validation:
+  - generator: "/cinder/tools/config/cinder-config-generator.conf"
+    config: "/etc/cinder/cinder.conf"
 
 ####################
 # Database
 ####################
 cinder_database_name: "cinder"
 cinder_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}cinder{% endif %}"
-cinder_database_address: "{{ database_address }}:{{ database_port }}"
+cinder_database_address: "{{ database_address | put_address_in_context('url') }}:{{ database_port }}"
 
-# Max number of object to consider
-# when run online data migration
-# cinder_max_number_osm: ""
+####################
+# Database sharding
+####################
+cinder_database_shard_root_user: "{% if enable_proxysql | bool %}root_shard_{{ cinder_database_shard_id }}{% else %}{{ database_user }}{% endif %}"
+cinder_database_shard_id: "{{ mariadb_default_database_shard_id | int }}"
+cinder_database_shard:
+  users:
+    - user: "{{ cinder_database_user }}"
+      password: "{{ cinder_database_password }}"
+      shard_id: "{{ cinder_database_shard_id }}"
+  rules:
+    - schema: "{{ cinder_database_name }}"
+      shard_id: "{{ cinder_database_shard_id }}"
+    - user: "{{ cinder_database_user }}"
+      shard_id: "{{ cinder_database_shard_id }}"
+
 
 ####################
 # Docker
 ####################
-cinder_install_type: "{{ kolla_install_type }}"
-cinder_tag: "{{ openstack_release }}"
+cinder_tag: "{{ openstack_tag }}"
 
-cinder_volume_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ cinder_install_type }}-cinder-volume"
+cinder_volume_image: "{{ docker_image_url }}cinder-volume"
 cinder_volume_tag: "{{ cinder_tag }}"
 cinder_volume_image_full: "{{ cinder_volume_image }}:{{ cinder_volume_tag }}"
 
-cinder_scheduler_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ cinder_install_type }}-cinder-scheduler"
+cinder_scheduler_image: "{{ docker_image_url }}cinder-scheduler"
 cinder_scheduler_tag: "{{ cinder_tag }}"
 cinder_scheduler_image_full: "{{ cinder_scheduler_image }}:{{ cinder_scheduler_tag }}"
 
-cinder_backup_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ cinder_install_type }}-cinder-backup"
+cinder_backup_image: "{{ docker_image_url }}cinder-backup"
 cinder_backup_tag: "{{ cinder_tag }}"
 cinder_backup_image_full: "{{ cinder_backup_image }}:{{ cinder_backup_tag }}"
 
-cinder_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ cinder_install_type }}-cinder-api"
+cinder_api_image: "{{ docker_image_url }}cinder-api"
 cinder_api_tag: "{{ cinder_tag }}"
 cinder_api_image_full: "{{ cinder_api_image }}:{{ cinder_api_tag }}"
 
@@ -150,77 +124,186 @@ cinder_backup_dimensions: "{{ default_container_dimensions }}"
 cinder_scheduler_dimensions: "{{ default_container_dimensions }}"
 cinder_volume_dimensions: "{{ default_container_dimensions }}"
 
+cinder_api_enable_healthchecks: "{{ enable_container_healthchecks }}"
+cinder_api_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+cinder_api_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+cinder_api_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+cinder_api_healthcheck_test:
+  - "CMD-SHELL"
+  - >-
+    healthcheck_curl {{
+    'https' if cinder_enable_tls_backend | bool else 'http' }}://{{
+    api_interface_address | put_address_in_context('url') }}:{{ cinder_api_listen_port }}/healthcheck
+cinder_api_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+cinder_api_healthcheck:
+  interval: "{{ cinder_api_healthcheck_interval }}"
+  retries: "{{ cinder_api_healthcheck_retries }}"
+  start_period: "{{ cinder_api_healthcheck_start_period }}"
+  test: "{% if cinder_api_enable_healthchecks | bool %}{{ cinder_api_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ cinder_api_healthcheck_timeout }}"
+
+cinder_scheduler_enable_healthchecks: "{{ enable_container_healthchecks }}"
+cinder_scheduler_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+cinder_scheduler_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+cinder_scheduler_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+cinder_scheduler_healthcheck_test: ["CMD-SHELL", "healthcheck_port cinder-scheduler {{ om_rpc_port }}"]
+cinder_scheduler_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+cinder_scheduler_healthcheck:
+  interval: "{{ cinder_scheduler_healthcheck_interval }}"
+  retries: "{{ cinder_scheduler_healthcheck_retries }}"
+  start_period: "{{ cinder_scheduler_healthcheck_start_period }}"
+  test: "{% if cinder_scheduler_enable_healthchecks | bool %}{{ cinder_scheduler_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ cinder_scheduler_healthcheck_timeout }}"
+
+cinder_volume_enable_healthchecks: "{{ enable_container_healthchecks }}"
+cinder_volume_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+cinder_volume_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+cinder_volume_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+cinder_volume_healthcheck_test: ["CMD-SHELL", "healthcheck_port cinder-volume {{ om_rpc_port }}"]
+cinder_volume_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+cinder_volume_healthcheck:
+  interval: "{{ cinder_volume_healthcheck_interval }}"
+  retries: "{{ cinder_volume_healthcheck_retries }}"
+  start_period: "{{ cinder_volume_healthcheck_start_period }}"
+  test: "{% if cinder_volume_enable_healthchecks | bool %}{{ cinder_volume_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ cinder_volume_healthcheck_timeout }}"
+
+cinder_backup_enable_healthchecks: "{{ enable_container_healthchecks }}"
+cinder_backup_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+cinder_backup_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+cinder_backup_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+cinder_backup_healthcheck_test: ["CMD-SHELL", "healthcheck_port cinder-backup {{ om_rpc_port }}"]
+cinder_backup_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+cinder_backup_healthcheck:
+  interval: "{{ cinder_backup_healthcheck_interval }}"
+  retries: "{{ cinder_backup_healthcheck_retries }}"
+  start_period: "{{ cinder_backup_healthcheck_start_period }}"
+  test: "{% if cinder_backup_enable_healthchecks | bool %}{{ cinder_backup_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ cinder_backup_healthcheck_timeout }}"
+
+cinder_api_default_volumes:
+  - "{{ node_config_directory }}/cinder-api/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ '/dev/shm:/dev/shm' }}"
+  - "{{ kolla_dev_repos_directory ~ '/cinder:/dev-mode/cinder' if cinder_dev_mode | bool else '' }}"
+cinder_backup_default_volumes:
+  - "{{ node_config_directory }}/cinder-backup/:{{ container_config_directory }}/:ro"
+  - "/dev/:/dev/"
+  - "/lib/modules:/lib/modules:ro"
+  - "/run:/run{{ ':shared' if kolla_container_engine == 'docker' else '' }}"
+  - "cinder:/var/lib/cinder"
+  - "{% if enable_iscsid | bool %}iscsi_info:/etc/iscsi{% endif %}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/cinder:/dev-mode/cinder' if cinder_dev_mode | bool else '' }}"
+cinder_scheduler_default_volumes:
+  - "{{ node_config_directory }}/cinder-scheduler/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ '/dev/shm:/dev/shm' }}"
+  - "{{ kolla_dev_repos_directory ~ '/cinder:/dev-mode/cinder' if cinder_dev_mode | bool else '' }}"
+cinder_volume_default_volumes:
+  - "{{ node_config_directory }}/cinder-volume/:{{ container_config_directory }}/:ro"
+  - "/dev/:/dev/"
+  - "/lib/modules:/lib/modules:ro"
+  - "/run:/run{{ ':shared' if kolla_container_engine == 'docker' else '' }}"
+  - "cinder:/var/lib/cinder"
+  - "{% if enable_iscsid | bool %}iscsi_info:/etc/iscsi{% endif %}"
+  - "{% if enable_cinder_backend_lvm | bool and cinder_target_helper == 'lioadm' %}target_config:/etc/target{% endif %}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/cinder:/dev-mode/cinder' if cinder_dev_mode | bool else '' }}"
+
+cinder_extra_volumes: "{{ default_extra_volumes }}"
+cinder_api_extra_volumes: "{{ cinder_extra_volumes }}"
+cinder_backup_extra_volumes: "{{ cinder_extra_volumes }}"
+cinder_scheduler_extra_volumes: "{{ cinder_extra_volumes }}"
+cinder_volume_extra_volumes: "{{ cinder_extra_volumes }}"
+
+cinder_volume_tmpfs:
+  - "{% if cinder_enable_conversion_tmpfs | bool %}/var/lib/cinder/conversion{% endif %}"
+
+# If true, use a tmpfs mount for the Cinder image conversion directory.
+cinder_enable_conversion_tmpfs: false
+
 ####################
 # OpenStack
 ####################
-cinder_admin_endpoint: "{{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ cinder_api_port }}/v1/%(tenant_id)s"
-cinder_internal_endpoint: "{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ cinder_api_port }}/v1/%(tenant_id)s"
-cinder_public_endpoint: "{{ public_protocol }}://{{ kolla_external_fqdn }}:{{ cinder_api_port }}/v1/%(tenant_id)s"
-cinder_v2_admin_endpoint: "{{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ cinder_api_port }}/v2/%(tenant_id)s"
-cinder_v2_internal_endpoint: "{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ cinder_api_port }}/v2/%(tenant_id)s"
-cinder_v2_public_endpoint: "{{ public_protocol }}://{{ kolla_external_fqdn }}:{{ cinder_api_port }}/v2/%(tenant_id)s"
-cinder_v3_admin_endpoint: "{{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ cinder_api_port }}/v3/%(tenant_id)s"
-cinder_v3_internal_endpoint: "{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ cinder_api_port }}/v3/%(tenant_id)s"
-cinder_v3_public_endpoint: "{{ public_protocol }}://{{ kolla_external_fqdn }}:{{ cinder_api_port }}/v3/%(tenant_id)s"
+cinder_internal_endpoint: "{{ cinder_internal_base_endpoint }}/v3"
+cinder_public_endpoint: "{{ cinder_public_base_endpoint }}/v3"
+cinder_v3_internal_endpoint: "{{ cinder_internal_base_endpoint }}/v3/%(tenant_id)s"
+cinder_v3_public_endpoint: "{{ cinder_public_base_endpoint }}/v3/%(tenant_id)s"
 
 cinder_logging_debug: "{{ openstack_logging_debug }}"
 
-cinder_keystone_user: "cinder"
-
 openstack_cinder_auth: "{{ openstack_auth }}"
 
+# After upgrading cinder, services will have an RPC version cap in place.  We
+# need to restart all services in order to allow them to use the latest RPC
+# version. Ideally, there would be a way to check whether all cinder services
+# are using the latest version, but currently there is not. Instead, wait a
+# short time for all cinder services to update the version of their service in
+# the database.  This seems to take around 10 seconds, but the default is 30 to
+# allow room for slowness.
+cinder_rpc_version_startup_delay: 30
+
+cinder_api_workers: "{{ openstack_service_workers }}"
 
 ####################
 # Cinder
 ####################
-cinder_backends:
-  - name: "rbd-1"
-    enabled: "{{ enable_ceph | bool and cinder_backend_ceph | bool }}"
-  - name: "lvm-1"
-    enabled: "{{ enable_cinder_backend_lvm | bool }}"
-  - name: "nfs-1"
-    enabled: "{{ enable_cinder_backend_nfs | bool }}"
-  - name: "hnas-iscsi"
-    enabled: "{{ enable_cinder_backend_hnas_iscsi | bool }}"
-  - name: "hnas-nfs"
-    enabled: "{{ enable_cinder_backend_hnas_nfs | bool }}"
-  - name: "vmwarevc-vmdk"
-    enabled: "{{ cinder_backend_vmwarevc_vmdk | bool }}"
-  - name: "zfssa-iscsi"
-    enabled: "{{ enable_cinder_backend_zfssa_iscsi | bool }}"
+# NOTE: the cinder backend definitions (cinder_backends, cinder_ceph_backends,
+# cinder_enabled_backends, cinder_backup_backend_ceph_name,
+# cinder_backup_ceph_backend and the cinder_backend_*_name variables) are
+# defined in group_vars/all/cinder.yml so that all cinder backend definitions
+# live in one place and are in scope for the iscsi role.
+skip_cinder_backend_check: false
 
-cinder_enabled_backends: "{{ cinder_backends|selectattr('enabled', 'equalto', true)|list }}"
+####################
+# Notification
+####################
+cinder_notification_topics:
+  - name: notifications
+    enabled: "{{ enable_ceilometer | bool }}"
 
-#############################################
-# Hitachi NAS Platform iSCSI and NFS drivers
-#############################################
-# iscsi
-hnas_iscsi_backend: "hnas_iscsi_backend"
-hnas_iscsi_username:
-hnas_iscsi_mgmt_ip0:
-hnas_iscsi_svc0_volume_type:
-hnas_iscsi_svc0_hdp:
-hnas_iscsi_svc0_ip:
+cinder_enabled_notification_topics: "{{ cinder_notification_topics | selectattr('enabled', 'equalto', true) | list }}"
 
-# nfs
-hnas_nfs_backend: "hnas_nfs_backend"
-hnas_nfs_username:
-hnas_nfs_mgmt_ip0:
-hnas_nfs_svc0_volume_type:
-hnas_nfs_svc0_hdp:
+#########################
+# Quobyte Storage Driver
+#########################
+quobyte_storage_host:
+quobyte_storage_volume:
 
-#############################################
-# Oracle ZFS Storage Appliance iSCSI driver
-#############################################
-zfssa_iscsi_backend: "zfssa_iscsi_backend"
-zfssa_iscsi_san_ip:
-zfssa_iscsi_login:
-zfssa_iscsi_pool:
-zfssa_iscsi_project:
-zfssa_iscsi_initiator_group:
-zfssa_iscsi_target_portal:
-zfssa_iscsi_target_interfaces:
 
+####################################
+# Everpure FlashArray Storage Driver
+####################################
+pure_iscsi_backend: "pure_iscsi_backend"
+pure_fc_backend: "pure_fc_backend"
+pure_api_token:
+pure_san_ip:
+
+################################
+# Lightbits Storage Driver
+###############################
+lightbits_nvme_tcp_backend_name: "lightbits_nvme_backend"
+lightos_skip_ssl_verify: false
+lightos_api_port: 443
+lightos_default_num_replicas: 3
+lightos_api_address:
+lightos_jwt:
+
+################################
+# Cinder VAST Storage Driver
+################################
+cinder_vast_username: admin
+cinder_vast_ip: "{{ vast_host }}"
+cinder_vast_port: "{{ vast_port }}"
+
+################################
+# Cinder Backup S3
+################################
+cinder_backup_s3_url: "{{ s3_url }}"
+cinder_backup_s3_bucket: "{{ s3_bucket }}"
+cinder_backup_s3_access_key: "{{ s3_access_key }}"
+cinder_backup_s3_secret_key: "{{ s3_secret_key }}"
 
 ####################
 # Kolla
@@ -229,3 +312,44 @@ cinder_git_repository: "{{ kolla_dev_repos_git }}/{{ project_name }}"
 cinder_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
 cinder_dev_mode: "{{ kolla_dev_mode }}"
 cinder_source_version: "{{ kolla_source_version }}"
+
+####################
+# Keystone
+####################
+cinder_ks_services:
+  - name: "cinder"
+    type: "block-storage"
+    description: "Openstack Block Storage"
+    endpoints:
+      - {'interface': 'internal', 'url': '{{ cinder_internal_endpoint }}'}
+      - {'interface': 'public', 'url': '{{ cinder_public_endpoint }}'}
+
+cinder_ks_users:
+  - project: "service"
+    user: "{{ cinder_keystone_user }}"
+    password: "{{ cinder_keystone_password }}"
+    role: "admin"
+
+cinder_ks_user_roles:
+  - project: "service"
+    user: "{{ cinder_keystone_user }}"
+    role: "service"
+
+####################
+# TLS
+####################
+cinder_enable_tls_backend: "{{ kolla_enable_tls_backend }}"
+
+############
+# Clustering
+############
+cinder_cluster_name: ""
+cinder_cluster_skip_precheck: false
+
+# Database
+cinder_database_enable_tls_internal: "{{ database_enable_tls_internal | bool }}"
+
+###################
+# Copy certificates
+###################
+cinder_copy_certs: "{{ kolla_copy_ca_into_containers | bool or cinder_enable_tls_backend | bool or cinder_database_enable_tls_internal | bool }}"

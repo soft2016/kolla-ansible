@@ -1,5 +1,5 @@
 {
-    "command": "uwsgi --master --emperor /etc/barbican/vassals --logto /var/log/kolla/barbican/barbican-api.log --logfile-chmod 644",
+    "command": "uwsgi /etc/barbican/barbican-api-uwsgi.ini",
     "config_files": [
         {
             "source": "{{ container_config_directory }}/barbican.conf",
@@ -8,8 +8,8 @@
             "perm": "0600"
         },
         {
-            "source": "{{ container_config_directory }}/vassals/barbican-api.ini",
-            "dest": "/etc/barbican/vassals/barbican-api.ini",
+            "source": "{{ container_config_directory }}/barbican-api-uwsgi.ini",
+            "dest": "/etc/barbican/barbican-api-uwsgi.ini",
             "owner": "barbican",
             "perm": "0600"
         },
@@ -19,22 +19,53 @@
             "owner": "barbican",
             "perm": "0600",
             "optional": true
-        }{% if barbican_policy_file is defined %},
+        }{% if barbican_enable_tls_backend | bool %},
+        {
+            "source": "{{ container_config_directory }}/barbican-cert.pem",
+            "dest": "/etc/barbican/certs/barbican-cert.pem",
+            "owner": "barbican",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/barbican-key.pem",
+            "dest": "/etc/barbican/certs/barbican-key.pem",
+            "owner": "barbican",
+            "perm": "0600"
+        }{% endif %}{% if barbican_policy_file is defined %},
         {
             "source": "{{ container_config_directory }}/{{ barbican_policy_file }}",
             "dest": "/etc/barbican/{{ barbican_policy_file }}",
             "owner": "barbican",
             "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
         }{% endif %}
     ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/barbican",
+            "owner": "barbican:kolla",
+            "perm": "2775"
+        }
+    ],
     "permissions": [
-       {
+        {
+            "path": "/var/log/kolla/barbican/*.log",
+            "owner": "barbican:kolla",
+            "perm": "0664"
+        },
+        {
             "path": "/var/lib/barbican",
             "owner": "barbican:barbican"
-       },
-       {
-            "path": "/var/log/kolla/barbican",
-            "owner": "barbican:barbican"
-       }
+        }
     ]
 }

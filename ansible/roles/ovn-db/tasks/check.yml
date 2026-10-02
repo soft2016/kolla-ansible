@@ -1,0 +1,4 @@
+---
+- name: Checking OVN-DB containers
+  ansible.builtin.import_role:
+    role: service-check

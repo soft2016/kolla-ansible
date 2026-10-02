@@ -5,14 +5,8 @@ log_dir = /var/log/kolla/ceilometer
 
 transport_url = {{ rpc_transport_url }}
 
-{% if nova_compute_virt_type == 'vmware' %}
-hypervisor_inspector = vsphere
-{% elif nova_compute_virt_type == 'xenapi' %}
-hypervisor_inspector = xenapi
-{% endif %}
-
 [service_credentials]
-auth_url = {{ internal_protocol  }}://{{ kolla_internal_fqdn }}:{{ keystone_public_port }}/v3
+auth_url = {{ keystone_internal_url }}
 region_name = {{ openstack_region_name }}
 password = {{ ceilometer_keystone_password }}
 username = {{ ceilometer_keystone_user }}
@@ -21,29 +15,34 @@ project_domain_id = {{ default_project_domain_id }}
 user_domain_id = {{ default_user_domain_id }}
 auth_type = password
 interface = internal
-
-{% if nova_compute_virt_type == 'vmware' %}
-[vmware]
-host_ip = {{ vmware_vcenter_host_ip }}
-host_username = {{ vmware_vcenter_host_username }}
-host_password = {{ vmware_vcenter_host_password }}
-insecure = {{ vmware_vcenter_insecure }}
-{% if not vmware_vcenter_insecure | bool %}
-ca_file = /etc/ceilometer/vmware_ca
-{% endif %}
-{% endif %}
+cafile = {{ openstack_cacert }}
 
 [oslo_messaging_notifications]
 transport_url = {{ notify_transport_url }}
+
+[oslo_messaging_rabbit]
+use_queue_manager = true
+heartbeat_in_pthread = false
+{% if om_enable_rabbitmq_tls | bool %}
+ssl = true
+ssl_ca_file = {{ om_rabbitmq_cacert }}
+{% endif %}
+rabbit_quorum_queue = true
+{% if om_enable_rabbitmq_stream_fanout | bool %}
+rabbit_stream_fanout = true
+rabbit_qos_prefetch_count = {{ om_rabbitmq_qos_prefetch_count }}
+{% endif %}
+rabbit_transient_quorum_queue = true
 
 {% if ceilometer_policy_file is defined %}
 [oslo_policy]
 policy_file = {{ ceilometer_policy_file }}
 {% endif %}
 
-{% if nova_compute_virt_type == 'xenapi' %}
-[xenapi]
-connection_url = {{ xenserver_connect_protocol }}://{{ xenserver_himn_ip }}
-connection_username = {{ xenserver_username }}
-connection_password = {{ xenserver_password }}
-{% endif %}
+[cache]
+backend = oslo_cache.memcache_pool
+enabled = true
+memcache_servers = {% for host in groups['memcached'] %}{{ 'api' | kolla_address(host) | put_address_in_context('memcache') }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
+
+[oslo_concurrency]
+lock_path = /var/lib/ceilometer/tmp

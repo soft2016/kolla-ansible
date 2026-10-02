@@ -1,0 +1,205 @@
+======================
+Nova - Compute Service
+======================
+
+Nova is a core service in OpenStack, and provides compute services. Typically
+this is via Virtual Machines (VMs), but may also be via bare metal servers if
+Nova is coupled with Ironic.
+
+Nova is enabled by default, but may be disabled by setting ``enable_nova`` to
+``false`` in ``globals.yml``.
+
+Virtualisation Drivers
+======================
+
+The virtualisation driver may be selected via ``nova_compute_virt_type`` in
+``globals.yml``. Supported options are ``qemu`` and ``kvm``.
+The default is ``kvm``.
+
+Libvirt
+-------
+
+Information on the libvirt-based drivers ``kvm`` and ``qemu`` can be found in
+:doc:`libvirt-guide`.
+
+Bare Metal
+----------
+
+Information on using Nova with Ironic to deploy compute instances to bare metal
+can be found in :doc:`../bare-metal/ironic-guide`.
+
+Fake Driver
+-----------
+
+The fake driver can be used for testing Nova's scaling properties without
+requiring access to a large amount of hardware resources. It is covered in
+:doc:`nova-fake-driver`.
+
+.. _nova-consoles:
+
+Consoles
+========
+
+The console driver may be selected via ``nova_console`` in ``globals.yml``.
+Valid options are ``none``, ``novnc`` and ``spice``. Additionally,
+serial console support can be enabled by setting
+``enable_nova_serialconsole_proxy`` to ``true``.
+
+``spice`` consoles have additional configuration options used by Kolla Ansible:
+
+* nova_spice_html5: configures whether the HTML5 transcoding proxy used by
+  Horizon is enabled, and defaults to ``true``.
+* nova_spice_require_secure: configures whether SPICE connections require that
+  the connection be secured by TLS. This defaults to ``false`` to remain
+  compatible with previous installations. Note that ``true`` implies
+  configuration and deployment of TLS certificates.
+
+Additionally ``spice`` has the following configuration options passed directly
+through to ``nova``:
+
+* nova_spice_image_compression: which compression algorithm to use for images
+  when using the SPICE console type. Defaults to ``auto_glz``.
+* nova_spice_jpeg_compression: whether or not to use JPEG compression with
+  SPICE consoles. Defaults to ``auto``.
+* nova_spice_zlib_compression: whether or not to use zlib compression with
+  SPICE consoles. Defaults to ``auto``.
+* nova_spice_playback_compression: whether or not to use compression for video
+  playback. Defaults to ``true``.
+* nova_spice_streaming_mode: what streaming mode to use with SPICE consoles.
+  Defaults to ``filter``.
+
+Cells
+=====
+
+Information on using Nova Cells V2 to scale out can be found in
+:doc:`nova-cells-guide`.
+
+Vendordata
+==========
+
+Nova supports passing deployer provided data to instances using a
+concept known as Vendordata. If a Vendordata file is located in the
+following path within the Kolla configuration, Kolla will
+automatically use it when the Nova service is deployed or
+reconfigured: ``/etc/kolla/config/nova/vendordata.json``.
+
+Failure handling
+================
+
+Compute service registration
+----------------------------
+
+During deployment, Kolla Ansible waits for Nova compute services to register
+themselves. By default, if a compute service does not register itself before
+the timeout, that host will be marked as failed in the Ansible run. This
+behaviour is useful at scale, where failures are more frequent.
+
+Alternatively, to fail all hosts in a cell when any compute service fails
+to register, set ``nova_compute_registration_fatal`` to ``true``.
+
+Managing resource providers via config files
+============================================
+
+In the Victoria cycle Nova merged support for managing resource providers
+via :nova-doc:`configuration files <admin/managing-resource-providers>`.
+
+Kolla Ansible limits the use of this feature to a single config file per
+Nova Compute service, which is defined via Ansible inventory group/host vars.
+The reason for doing this is to encourage users to configure each compute
+service individually, so that when further resources are added, existing
+compute services do not need to be restarted.
+
+For example, a user wanting to configure a compute resource with GPUs for
+a specific host may add the following file to host_vars:
+
+.. code-block:: console
+
+    [host_vars]$ cat gpu_compute_0001
+    nova_cell_compute_provider_config:
+      meta:
+        schema_version: '1.0'
+      providers:
+        - identification:
+            name: $COMPUTE_NODE
+          inventories:
+            additional:
+              - CUSTOM_GPU:
+                  total: 8
+                  reserved: 0
+                  min_unit: 1
+                  max_unit: 1
+                  step_size: 1
+                  allocation_ratio: 1.0
+
+A similar approach can be used with group vars to cover more than one machine.
+
+Since a badly formatted file will prevent the Nova Compute service from
+starting, it should first be validated as described in the
+:nova-doc:`documentation <admin/managing-resource-providers>`.
+The Nova Compute service can then be reconfigured to apply the change.
+
+To remove the resource provider configuration, it is simplest to leave the
+group/host vars in place without specifying any inventory or traits. This will
+effectively remove the configuration when the Nova Compute service is restarted.
+If you choose to undefine `nova_cell_compute_provider_config` on a host, you must
+manually remove the generated config from inside the container, or recreate the
+container.
+
+Emulated virtual Trusted Platform Module (vTPM)
+===============================================
+
+Nova supports adding an emulated virtual Trusted Platform Module (vTPM) to
+instances. This feature is implemented with the SWTPM (Software TPM Emulator)
+package. To enable this feature, set ``enable_nova_swtpm`` to ``true``.
+Beware of `limitations`__ that come with this solution.
+
+  __ https://docs.openstack.org/nova/latest/admin/emulated-tpm.html#limitations
+
+Host Aggregates and Availability Zones
+=======================================
+
+Kolla Ansible can manage Nova host aggregate membership and availability zones
+directly from inventory variables, reconciling the state on every deploy or
+reconfigure run.
+
+Availability Zones
+------------------
+
+Set ``nova_compute_availability_zone`` on a compute host or group to assign it
+to an AZ-backed host aggregate of the same name. The aggregate is created if it
+does not exist. Hosts with an empty value are left unmanaged.
+
+.. code-block:: yaml
+
+   # host_vars/compute01
+   nova_compute_availability_zone: az-1
+
+   # group_vars/gpu_computes
+   nova_compute_availability_zone: az-gpu
+
+When a host moves from one AZ to another, Kolla Ansible removes it from the
+old aggregate before adding it to the new one, avoiding Nova's restriction that
+a host may only belong to one AZ aggregate at a time.
+
+.. warning::
+
+   A compute host must not have any instances on it when its AZ is changed.
+   Nova will refuse the aggregate membership change while instances are
+   present on the host. Migrate or delete all instances from a host before
+   changing its ``nova_compute_availability_zone``.
+
+Arbitrary Aggregates
+--------------------
+
+Set ``nova_compute_aggregates`` to a list of aggregate names to assign a host
+to one or more aggregates without an availability zone. These aggregates are
+created if they do not exist and their host membership is reconciled on each
+run. A host may belong to both an AZ aggregate and any number of arbitrary
+aggregates simultaneously.
+
+.. code-block:: yaml
+
+   # host_vars/compute01
+   nova_compute_aggregates:
+     - gpu-v100
+     - ssd-storage

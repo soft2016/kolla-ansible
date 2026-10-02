@@ -1,0 +1,39 @@
+---
+- job:
+    name: kolla-ansible-lets-encrypt-base
+    parent: kolla-ansible-base
+    voting: false
+    files: !inherit
+      - ^ansible/group_vars/all/letsencrypt.yml
+      - ^ansible/roles/fluentd/templates/conf/input/11-letsencrypt.conf.j2
+      - ^ansible/roles/(haproxy-config|letsencrypt|loadbalancer|loadbalancer-config)/
+      - ^roles/kolla-ansible-deploy/tasks/certificates.yml
+      - ^tests/test-core-openstack.sh
+      - ^tests/test-dashboard.sh
+    vars:
+      scenario: lets-encrypt
+      scenario_images_extra:
+        - ^haproxy
+        - ^httpd
+        - ^letsencrypt
+      le_enabled: true
+      tls_enabled: true
+
+- job:
+    name: kolla-ansible-debian-trixie-lets-encrypt
+    parent: kolla-ansible-lets-encrypt-base
+    nodeset: kolla-ansible-debian-trixie-multi-16GB
+
+- job:
+    name: kolla-ansible-ubuntu-noble-lets-encrypt
+    parent: kolla-ansible-lets-encrypt-base
+    nodeset: kolla-ansible-ubuntu-noble-multi-16GB
+
+- project-template:
+    name: kolla-ansible-scenario-lets-encrypt
+    description: |
+      Runs Kolla-Ansible Let's Encrypt scenario jobs.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie-lets-encrypt
+        - kolla-ansible-ubuntu-noble-lets-encrypt

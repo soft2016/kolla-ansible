@@ -1,12 +1,18 @@
 ---
-- include_tasks: config.yml
+- name: Configure horizon
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: clone.yml
+- name: Check horizon containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Include tasks from clone.yml
+  ansible.builtin.include_tasks: clone.yml
   when:
     - horizon_dev_mode | bool
 
-- include_tasks: bootstrap_service.yml
+- name: Include tasks from bootstrap_service.yml
+  ansible.builtin.include_tasks: bootstrap_service.yml
   when: horizon_backend_database | bool
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

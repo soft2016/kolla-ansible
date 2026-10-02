@@ -1,45 +1,56 @@
 ---
-- include_tasks: config.yml
+- name: Configure keystone
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check keystone containers
+  ansible.builtin.import_tasks: check-containers.yml
 
 - name: Enable log_bin_trust_function_creators function
+  become: true
   kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
     module_name: mysql_variables
     module_args:
+      ca_cert: "{{ openstack_cacert if database_enable_tls_internal | bool else omit }}"
       login_host: "{{ database_address }}"
       login_port: "{{ database_port }}"
-      login_user: "{{ database_user }}"
+      login_user: "{{ keystone_database_shard_root_user }}"
       login_password: "{{ database_password }}"
       variable: log_bin_trust_function_creators
       value: 1
-  run_once: True
+  run_once: true
   when:
     - inventory_hostname == groups['keystone'][0]
     - not use_preconfigured_databases | bool
 
 - name: Init keystone database upgrade
-  command: /bin/true
+  changed_when: true
+  ansible.builtin.command: /bin/true
   notify: Init keystone database upgrade
   when: inventory_hostname == groups['keystone'][0]
 
 - name: Finish keystone database upgrade
-  command: /bin/true
+  changed_when: true
+  ansible.builtin.command: /bin/true
   notify: Finish keystone database upgrade
   when: inventory_hostname == groups['keystone'][-1]
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers
 
 - name: Disable log_bin_trust_function_creators function
+  become: true
   kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
     module_name: mysql_variables
     module_args:
+      ca_cert: "{{ openstack_cacert if database_enable_tls_internal | bool else omit }}"
       login_host: "{{ database_address }}"
       login_port: "{{ database_port }}"
-      login_user: "{{ database_user }}"
+      login_user: "{{ keystone_database_shard_root_user }}"
       login_password: "{{ database_password }}"
       variable: log_bin_trust_function_creators
       value: 0
-  run_once: True
+  run_once: true
   when:
-    - inventory_hostname == groups['keystone'][-1]
     - not use_preconfigured_databases | bool

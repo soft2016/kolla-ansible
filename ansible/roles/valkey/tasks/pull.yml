@@ -1,0 +1,4 @@
+---
+- name: Pull valkey images
+  ansible.builtin.import_role:
+    role: service-images-pull

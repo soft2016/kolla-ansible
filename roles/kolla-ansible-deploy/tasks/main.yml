@@ -1,0 +1,14 @@
+---
+- name: Ensure /etc/kolla is writable
+  become: true
+  ansible.builtin.file:
+    path: /etc/kolla
+    state: directory
+    mode: "0777"
+    recurse: true
+
+- name: Import certificates.yml
+  ansible.builtin.import_tasks: certificates.yml
+
+- name: Import deploy.yml
+  ansible.builtin.import_tasks: deploy.yml

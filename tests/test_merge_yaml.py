@@ -13,16 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import imp
+from importlib.machinery import SourceFileLoader
 import os
+import tempfile
 
+from ansible.errors import AnsibleModuleError
+from ansible.parsing.dataloader import DataLoader
+from ansible.template import Templar
 from oslotest import base
 
 PROJECT_DIR = os.path.abspath(os.path.join(os. path.dirname(__file__), '../'))
 MERGE_YAML_FILE = os.path.join(PROJECT_DIR,
                                'ansible/action_plugins/merge_yaml.py')
-
-merge_yaml = imp.load_source('merge_yaml', MERGE_YAML_FILE)
+merge_yaml = SourceFileLoader('merge_yaml', MERGE_YAML_FILE).load_module()
 
 
 class MergeYamlConfigTest(base.BaseTestCase):
@@ -126,3 +129,80 @@ class MergeYamlConfigTest(base.BaseTestCase):
             }
         }
         self.assertDictEqual(actual, expected)
+
+    def test_merge_nested_extend_lists(self):
+        initial_conf = {
+            'level0': {
+                'level1': {
+                    "mylist": ["one", "two"]
+                },
+            }
+        }
+
+        extension = {
+            'level0': {
+                'level1': {
+                    "mylist": ["three"]
+                },
+            }
+        }
+
+        actual = merge_yaml.Utils.update_nested_conf(
+            initial_conf, extension, extend_lists=True)
+        expected = {
+            'level0': {
+                'level1': {
+                    "mylist": ["one", "two", "three"]
+                },
+            }
+        }
+        self.assertDictEqual(actual, expected)
+
+    def test_merge_nested_extend_lists_mismatch_types(self):
+        initial_conf = {
+            'level0': {
+                'level1': {
+                    "mylist": ["one", "two"]
+                },
+            }
+        }
+
+        extension = {
+            'level0': {
+                'level1': {
+                    "mylist": "three"
+                },
+            }
+        }
+        with self.assertRaisesRegex(AnsibleModuleError, "Failure merging key"):
+            merge_yaml.Utils.update_nested_conf(
+                initial_conf, extension, extend_lists=True)
+
+    def test_read_config_lstrip_blocks(self):
+        # An indented Jinja2 block tag on its own line must not leak its
+        # leading whitespace into the following line, or the resulting
+        # YAML indentation becomes inconsistent with its siblings.
+        content = (
+            "foo:\n"
+            "  bar: baz\n"
+            "  {% if true %}\n"
+            "  extra: value\n"
+            "  {% endif %}\n"
+            "  qux: quux\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = os.path.join(tmpdir, 'source.yml')
+            with open(source, 'w') as f:
+                f.write(content)
+
+            loader = DataLoader()
+            loader.set_basedir(tmpdir)
+            action = object.__new__(merge_yaml.ActionModule)
+            action._loader = loader
+            action._templar = Templar(loader=loader)
+
+            result = action.read_config(source)
+
+        self.assertEqual(
+            {'foo': {'bar': 'baz', 'extra': 'value', 'qux': 'quux'}},
+            result)

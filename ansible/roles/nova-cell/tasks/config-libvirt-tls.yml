@@ -1,0 +1,27 @@
+---
+- name: Copying over libvirt TLS keys to services
+  become: true
+  vars:
+    services:
+      - "nova-compute"
+      - "nova-libvirt"
+    key_files:
+      - cacert.pem
+      - clientcert.pem
+      - clientkey.pem
+      - servercert.pem
+      - serverkey.pem
+    service_name: "{{ item[0] }}"
+    filename: "{{ item[1] }}"
+    paths:
+      - "{{ node_custom_config }}/nova/nova-libvirt/{{ inventory_hostname }}/{{ filename }}"
+      - "{{ node_custom_config }}/nova/nova-libvirt/{{ filename }}"
+    service: "{{ nova_cell_services[service_name] }}"
+  ansible.builtin.copy:
+    src: "{{ lookup('first_found', paths) }}"
+    dest: "{{ node_config_directory }}/{{ service_name }}/{{ filename }}"
+    mode: "0600"
+  when:
+    - service | service_enabled_and_mapped_to_host
+    - not (service_name == 'nova-compute' and (filename == 'servercert.pem' or filename == 'serverkey.pem'))
+  loop: "{{ services | product(key_files) | list }}"

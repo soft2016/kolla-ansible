@@ -1,676 +1,722 @@
 ---
-# NOTE(awiddersheim): Gather facts for all hosts as a
-# first step since several plays below require them when
-# building their configurations. The below 'gather_facts'
-# set to 'false' is a bit confusing but this is to avoid
-# Ansible gathering facts twice.
-- name: Gather facts for all hosts
-  hosts: all
-  serial: '{{ kolla_serial|default("0") }}'
-  gather_facts: false
-  tasks:
-    - setup:
-  tags: always
+- name: Gather facts
+  import_playbook: gather-facts.yml
 
-# NOTE(pbourke): This case covers deploying subsets of hosts using --limit. The
-# limit arg will cause the first play to gather facts only about that node,
-# meaning facts such as IP addresses for rabbitmq nodes etc. will be undefined
-# in the case of adding a single compute node.
-# We don't want to add the delegate parameters to the above play as it will
-# result in ((num_nodes-1)^2) number of SSHs when running for all nodes
-# which can be very inefficient.
-- name: Gather facts for all hosts (if using --limit)
-  hosts: all
-  serial: '{{ kolla_serial|default("0") }}'
-  gather_facts: false
-  tasks:
-    - setup:
-      delegate_facts: True
-      delegate_to: "{{ item }}"
-      with_items: "{{ groups['all'] }}"
-      when:
-        - (ansible_play_batch | length) != (groups['all'] | length)
-  tags: always
-
-- name: Detect openstack_release variable
+# NOTE(mgoddard): In large environments, even tasks that are skipped can take a
+# significant amount of time. This is an optimisation to prevent any tasks
+# running in the subsequent plays for services that are disabled.
+- name: Group hosts based on configuration
   hosts: all
   gather_facts: false
+  max_fail_percentage: >-
+    {{ group_hosts_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   tasks:
-    - name: Get current kolla-ansible version number
-      local_action: command python -c "import pbr.version; print(pbr.version.VersionInfo('kolla-ansible'))"
-      register: kolla_ansible_version
+    - name: Group hosts based on Kolla action
+      ansible.builtin.group_by:
+        key: "kolla_action_{{ kolla_action }}"
       changed_when: false
-      when: openstack_release == "auto"
 
-    - name: Set openstack_release variable
-      set_fact:
-        openstack_release: "{{ kolla_ansible_version.stdout }}"
-      when: openstack_release == "auto"
+    - name: Group hosts based on enabled services
+      ansible.builtin.group_by:
+        key: "{{ item }}"
+      changed_when: false
+      with_items:
+        - enable_aodh_{{ enable_aodh | bool }}
+        - enable_barbican_{{ enable_barbican | bool }}
+        - enable_blazar_{{ enable_blazar | bool }}
+        - enable_ceilometer_{{ enable_ceilometer | bool }}
+        - enable_ceph_rgw_{{ enable_ceph_rgw | bool }}
+        - enable_cinder_{{ enable_cinder | bool }}
+        - enable_cloudkitty_{{ enable_cloudkitty | bool }}
+        - enable_collectd_{{ enable_collectd | bool }}
+        - enable_cyborg_{{ enable_cyborg | bool }}
+        - enable_designate_{{ enable_designate | bool }}
+        - enable_etcd_{{ enable_etcd | bool }}
+        - enable_fluentd_{{ enable_fluentd | bool }}
+        - enable_glance_{{ enable_glance | bool }}
+        - enable_gnocchi_{{ enable_gnocchi | bool }}
+        - enable_grafana_{{ enable_grafana | bool }}
+        - enable_hacluster_{{ enable_hacluster | bool }}
+        - enable_heat_{{ enable_heat | bool }}
+        - enable_horizon_{{ enable_horizon | bool }}
+        - enable_ironic_{{ enable_ironic | bool }}
+        - enable_iscsid_{{ enable_iscsid | bool }}
+        - enable_keystone_{{ enable_keystone | bool }}
+        - enable_letsencrypt_{{ enable_letsencrypt | bool }}
+        - enable_loadbalancer_{{ enable_loadbalancer | bool }}
+        - enable_magnum_{{ enable_magnum | bool }}
+        - enable_manila_{{ enable_manila | bool }}
+        - enable_mariadb_{{ enable_mariadb | bool }}
+        - enable_masakari_{{ enable_masakari | bool }}
+        - enable_memcached_{{ enable_memcached | bool }}
+        - enable_mistral_{{ enable_mistral | bool }}
+        - enable_multipathd_{{ enable_multipathd | bool }}
+        - enable_neutron_{{ enable_neutron | bool }}
+        - enable_nova_{{ enable_nova | bool }}
+        - enable_octavia_{{ enable_octavia | bool }}
+        - enable_opensearch_{{ enable_opensearch | bool }}
+        - enable_opensearch_dashboards_{{ enable_opensearch_dashboards | bool }}
+        - enable_openvswitch_{{ enable_openvswitch | bool }}_enable_ovs_dpdk_{{ enable_ovs_dpdk | bool }}
+        - enable_ovn_{{ enable_ovn | bool }}
+        - enable_placement_{{ enable_placement | bool }}
+        - enable_prometheus_{{ enable_prometheus | bool }}
+        - enable_rabbitmq_{{ enable_rabbitmq | bool }}
+        - enable_valkey_{{ enable_valkey | bool }}
+        - enable_skyline_{{ enable_skyline | bool }}
+        - enable_tacker_{{ enable_tacker | bool }}
+        - enable_trove_{{ enable_trove | bool }}
+        - enable_watcher_{{ enable_watcher | bool }}
   tags: always
 
 - name: Apply role prechecks
   gather_facts: false
-  hosts:
-    - all
+  # Apply only when kolla action is 'precheck'.
+  hosts: kolla_action_precheck
+  max_fail_percentage: >-
+    {{ prechecks_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
     - role: prechecks
-      when: kolla_action == "precheck"
 
-- name: Apply role chrony
+- name: Apply role logs
   gather_facts: false
-  hosts:
-    - chrony-server
-    - chrony
+  hosts: kolla_logs
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ logs_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  tags:
+    - common
+    - logs
   roles:
-    - { role: chrony,
-        tags: chrony,
-        when: enable_chrony | bool }
+    - logs
 
-- name: Apply role haproxy
+- name: Apply role kolla_toolbox
   gather_facts: false
   hosts:
-    - haproxy
+    - kolla_toolbox
+  serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ common_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  tags:
+    - common
+    - kolla_toolbox
   roles:
-    - { role: haproxy,
-        tags: haproxy,
-        when: enable_haproxy | bool }
+    - role: kolla_toolbox
+
+- name: Apply role cron
+  gather_facts: false
+  hosts:
+    - cron
+  serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ cron_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  tags:
+    - cron
+  roles:
+    - role: cron
+
+- name: Apply role fluentd
+  gather_facts: false
+  hosts:
+    - fluentd
+    - '&enable_fluentd_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ fluentd_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  tags:
+    - fluentd
+  roles:
+    - role: fluentd
+
+# MariaDB deployment is more complicated than other services, so is covered in
+# its own playbook.
+- name: Apply role mariadb
+  import_playbook: mariadb.yml
+
+- name: Apply role loadbalancer
+  gather_facts: false
+  hosts:
+    - loadbalancer
+    - "&enable_loadbalancer_True"
+  serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ loadbalancer_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  tags:
+    - haproxy
+    - keepalived
+    - loadbalancer
+  roles:
+    - { role: loadbalancer }
   tasks:
-    - block:
-        - include_role:
-            role: aodh
+    - name: Configure loadbalancer for enabled services
+      when:
+        - enable_haproxy | bool
+        - kolla_action in ['deploy', 'reconfigure', 'upgrade', 'config']
+      block:
+        - name: Configure loadbalancer for aodh
+          ansible.builtin.include_role:
+            name: aodh
             tasks_from: loadbalancer
           tags: aodh
           when: enable_aodh | bool
-        - include_role:
-            role: barbican
+        - name: Configure loadbalancer for barbican
+          ansible.builtin.include_role:
+            name: barbican
             tasks_from: loadbalancer
           tags: barbican
           when: enable_barbican | bool
-        - include_role:
-            role: blazar
+        - name: Configure loadbalancer for blazar
+          ansible.builtin.include_role:
+            name: blazar
             tasks_from: loadbalancer
           tags: blazar
           when: enable_blazar | bool
-        - include_role:
-            role: ceph
+        - name: Configure loadbalancer for ceph-rgw
+          ansible.builtin.include_role:
+            name: ceph-rgw
             tasks_from: loadbalancer
-          tags: ceph
-          when: enable_ceph | bool
-        - include_role:
-            role: cinder
+          tags: ceph-rgw
+          when: enable_ceph_rgw | bool
+        - name: Configure loadbalancer for cinder
+          ansible.builtin.include_role:
+            name: cinder
             tasks_from: loadbalancer
           tags: cinder
           when: enable_cinder | bool
-        - include_role:
-            role: cloudkitty
+        - name: Configure loadbalancer for cloudkitty
+          ansible.builtin.include_role:
+            name: cloudkitty
             tasks_from: loadbalancer
           tags: cloudkitty
           when: enable_cloudkitty | bool
-        - include_role:
-            role: congress
+        - name: Configure loadbalancer for cyborg
+          ansible.builtin.include_role:
+            name: cyborg
             tasks_from: loadbalancer
-          tags: congress
-          when: enable_congress | bool
-        - include_role:
-            role: designate
+          tags: cyborg
+          when: enable_cyborg | bool
+        - name: Configure loadbalancer for designate
+          ansible.builtin.include_role:
+            name: designate
             tasks_from: loadbalancer
           tags: designate
           when: enable_designate | bool
-        - include_role:
-            role: elasticsearch
+        - name: Configure loadbalancer for etcd
+          ansible.builtin.include_role:
+            name: etcd
             tasks_from: loadbalancer
-          tags: elasticsearch
-          when: enable_elasticsearch | bool
-        - include_role:
-            role: freezer
-            tasks_from: loadbalancer
-          tags: freezer
-          when: enable_freezer | bool
-        - include_role:
-            role: glance
+          tags: etcd
+          when: enable_etcd | bool
+        - name: Configure loadbalancer for glance
+          ansible.builtin.include_role:
+            name: glance
             tasks_from: loadbalancer
           tags: glance
           when: enable_glance | bool
-        - include_role:
-            role: gnocchi
+        - name: Configure loadbalancer for gnocchi
+          ansible.builtin.include_role:
+            name: gnocchi
             tasks_from: loadbalancer
           tags: gnocchi
           when: enable_gnocchi | bool
-        - include_role:
-            role: grafana
+        - name: Configure loadbalancer for grafana
+          ansible.builtin.include_role:
+            name: grafana
             tasks_from: loadbalancer
           tags: grafana
           when: enable_grafana | bool
-        - include_role:
-            role: heat
+        - name: Configure loadbalancer for heat
+          ansible.builtin.include_role:
+            name: heat
             tasks_from: loadbalancer
           tags: heat
           when: enable_heat | bool
-        - include_role:
-            role: horizon
+        - name: Configure loadbalancer for horizon
+          ansible.builtin.include_role:
+            name: horizon
             tasks_from: loadbalancer
           tags: horizon
           when: enable_horizon | bool
-        - include_role:
-            role: influxdb
-            tasks_from: loadbalancer
-          tags: influxdb
-          when: enable_influxdb | bool
-        - include_role:
-            role: ironic
+        - name: Configure loadbalancer for ironic
+          ansible.builtin.include_role:
+            name: ironic
             tasks_from: loadbalancer
           tags: ironic
           when: enable_ironic | bool
-        - include_role:
-            role: karbor
-            tasks_from: loadbalancer
-          tags: karbor
-          when: enable_karbor | bool
-        - include_role:
-            role: keystone
+        - name: Configure loadbalancer for keystone
+          ansible.builtin.include_role:
+            name: keystone
             tasks_from: loadbalancer
           tags: keystone
           when: enable_keystone | bool
-        - include_role:
-            role: kibana
+        - name: Configure loadbalancer for letsencrypt
+          ansible.builtin.include_role:
+            name: letsencrypt
             tasks_from: loadbalancer
-          tags: kibana
-          when: enable_kibana | bool
-        - include_role:
-            role: magnum
+          tags: letsencrypt
+          when: enable_letsencrypt | bool
+        - name: Configure loadbalancer for magnum
+          ansible.builtin.include_role:
+            name: magnum
             tasks_from: loadbalancer
           tags: magnum
           when: enable_magnum | bool
-        - include_role:
-            role: manila
+        - name: Configure loadbalancer for manila
+          ansible.builtin.include_role:
+            name: manila
             tasks_from: loadbalancer
           tags: manila
           when: enable_manila | bool
-        - include_role:
-            role: mariadb
+        - name: Configure loadbalancer for mariadb
+          ansible.builtin.include_role:
+            name: mariadb
             tasks_from: loadbalancer
           tags: mariadb
-          when: enable_mariadb | bool
-        - include_role:
-            role: memcached
+          when: enable_mariadb | bool or enable_external_mariadb_load_balancer | bool
+        - name: Configure loadbalancer for masakari
+          ansible.builtin.include_role:
+            name: masakari
+            tasks_from: loadbalancer
+          tags: masakari
+          when: enable_masakari | bool
+        - name: Configure loadbalancer for memcached
+          ansible.builtin.include_role:
+            name: memcached
             tasks_from: loadbalancer
           tags: memcached
           when: enable_memcached | bool
-        - include_role:
-            role: mistral
+        - name: Configure loadbalancer for mistral
+          ansible.builtin.include_role:
+            name: mistral
             tasks_from: loadbalancer
           tags: mistral
           when: enable_mistral | bool
-        - include_role:
-            role: monasca
-            tasks_from: loadbalancer
-          tags: monasca
-          when: enable_monasca | bool
-        - include_role:
-            role: mongodb
-            tasks_from: loadbalancer
-          tags: mongodb
-          when: enable_mongodb | bool
-        - include_role:
-            role: murano
-            tasks_from: loadbalancer
-          tags: murano
-          when: enable_murano | bool
-        - include_role:
-            role: neutron
+        - name: Configure loadbalancer for neutron
+          ansible.builtin.include_role:
+            name: neutron
             tasks_from: loadbalancer
           tags: neutron
           when: enable_neutron | bool
-        - include_role:
-            role: nova
+        - name: Configure loadbalancer for placement
+          ansible.builtin.include_role:
+            name: placement
             tasks_from: loadbalancer
-          tags: nova
+          tags: placement
+        - name: Configure loadbalancer for nova
+          ansible.builtin.include_role:
+            name: nova
+            tasks_from: loadbalancer
+          tags:
+            - nova
+            - nova-api
           when: enable_nova | bool
-        - include_role:
-            role: octavia
+        - name: Configure loadbalancer for nova-cell
+          ansible.builtin.include_role:
+            name: nova-cell
+            tasks_from: loadbalancer
+          tags:
+            - nova
+            - nova-cell
+          when: enable_nova | bool
+        - name: Configure loadbalancer for octavia
+          ansible.builtin.include_role:
+            name: octavia
             tasks_from: loadbalancer
           tags: octavia
           when: enable_octavia | bool
-        - include_role:
-            role: opendaylight
+        - name: Configure loadbalancer for opensearch
+          ansible.builtin.include_role:
+            name: opensearch
             tasks_from: loadbalancer
-          tags: opendaylight
-          when: enable_opendaylight | bool
-        - include_role:
-            role: panko
-            tasks_from: loadbalancer
-          tags: panko
-          when: enable_panko | bool
-        - include_role:
-            role: prometheus
+          tags: opensearch
+          when: enable_opensearch | bool
+        - name: Configure loadbalancer for prometheus
+          ansible.builtin.include_role:
+            name: prometheus
             tasks_from: loadbalancer
           tags: prometheus
           when: enable_prometheus | bool
-        - include_role:
-            role: rabbitmq
+        - name: Configure loadbalancer for rabbitmq
+          ansible.builtin.include_role:
+            name: rabbitmq
             tasks_from: loadbalancer
           tags: rabbitmq
           vars:
             role_rabbitmq_cluster_cookie:
             role_rabbitmq_groups:
-          when: enable_rabbitmq | bool or enable_outward_rabbitmq | bool
-        - include_role:
-            role: sahara
+          when: enable_rabbitmq | bool
+        - name: Configure loadbalancer for skyline
+          ansible.builtin.include_role:
+            name: skyline
             tasks_from: loadbalancer
-          tags: sahara
-          when: enable_sahara | bool
-        - include_role:
-            role: searchlight
-            tasks_from: loadbalancer
-          tags: searchlight
-          when: enable_searchlight | bool
-        - include_role:
-            role: senlin
-            tasks_from: loadbalancer
-          tags: senlin
-          when: enable_senlin | bool
-        - include_role:
-            role: skydive
-            tasks_from: loadbalancer
-          tags: skydive
-          when: enable_skydive | bool
-        - include_role:
-            role: solum
-            tasks_from: loadbalancer
-          tags: solum
-          when: enable_solum | bool
-        - include_role:
-            role: swift
-            tasks_from: loadbalancer
-          tags: swift
-          when: enable_swift | bool
-        - include_role:
-            role: tacker
+          tags: skyline
+          when: enable_skyline | bool
+        - name: Configure loadbalancer for tacker
+          ansible.builtin.include_role:
+            name: tacker
             tasks_from: loadbalancer
           tags: tacker
           when: enable_tacker | bool
-        - include_role:
-            role: trove
+        - name: Configure loadbalancer for trove
+          ansible.builtin.include_role:
+            name: trove
             tasks_from: loadbalancer
           tags: trove
           when: enable_trove | bool
-        - include_role:
-            role: vitrage
-            tasks_from: loadbalancer
-          tags: vitrage
-          when: enable_vitrage | bool
-        - include_role:
-            role: watcher
+        - name: Configure loadbalancer for watcher
+          ansible.builtin.include_role:
+            name: watcher
             tasks_from: loadbalancer
           tags: watcher
           when: enable_watcher | bool
-        - include_role:
-            role: zun
-            tasks_from: loadbalancer
-          tags: zun
-          when: enable_zun | bool
-      when:
-        - enable_haproxy | bool
-        - kolla_action in ['deploy', 'reconfigure', 'upgrade', 'config']
+        # NOTE(r-krcek): This last step will notify handlers if any
+        # changes to the configuration have been made.
+        - name: Check loadbalancer containers
+          ansible.builtin.include_role:
+            name: loadbalancer
+            tasks_from: check-containers
+          when: kolla_action != 'config'
+
+- name: Apply role opensearch
+  gather_facts: false
+  hosts:
+    - opensearch
+    - "&enable_opensearch_True"
+  serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ opensearch_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  roles:
+    - { role: opensearch, tags: opensearch }
+
+- name: Apply role letsencrypt
+  gather_facts: false
+  hosts:
+    - letsencrypt
+    - "&enable_letsencrypt_True"
+  serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ letsencrypt_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  roles:
+    - { role: letsencrypt, tags: letsencrypt }
 
 - name: Apply role collectd
   gather_facts: false
-  hosts: collectd
+  hosts:
+    - collectd
+    - "&enable_collectd_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ collectd_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: collectd,
-        tags: collectd,
-        when: enable_collectd | bool }
+    - { role: collectd, tags: collectd }
 
-- name: Apply role zookeeper
-  gather_facts: false
-  hosts: zookeeper
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: zookeeper,
-        tags: zookeeper,
-        when: enable_zookeeper | bool }
-
-- name: Apply role elasticsearch
-  gather_facts: false
-  hosts: elasticsearch
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: elasticsearch,
-        tags: elasticsearch,
-        when: enable_elasticsearch | bool }
-
-- name: Apply role influxdb
-  gather_facts: false
-  hosts: influxdb
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: influxdb,
-        tags: influxdb,
-        when: enable_influxdb | bool }
-
-- name: Apply role telegraf
+- name: Apply role valkey
   gather_facts: false
   hosts:
-    - telegraf
+    - valkey
+    - "&enable_valkey_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ valkey_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: telegraf,
-        tags: telegraf,
-        when: enable_telegraf | bool }
-
-- name: Apply role redis
-  gather_facts: false
-  hosts:
-    - redis
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: redis,
-        tags: redis,
-        when: enable_redis | bool }
-
-- name: Apply role kibana
-  gather_facts: false
-  hosts: kibana
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: kibana,
-        tags: kibana,
-        when: enable_kibana | bool }
-
-- name: Apply role mariadb
-  gather_facts: false
-  hosts: mariadb
-  roles:
-    - { role: mariadb,
-        tags: mariadb,
-        when: enable_mariadb | bool }
+    - { role: valkey, tags: valkey }
 
 - name: Apply role memcached
   gather_facts: false
-  hosts: memcached
+  hosts:
+    - memcached
+    - "&enable_memcached_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ memcached_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: memcached,
-        tags: [memcache, memcached],
-        when: enable_memcached | bool }
+    - { role: memcached, tags: [memcache, memcached] }
 
 - name: Apply role prometheus
   gather_facts: false
   hosts:
     - prometheus
-    - prometheus-node-exporter
     - prometheus-mysqld-exporter
-    - prometheus-haproxy-exporter
-    - prometheus-cadvisor
+    - prometheus-memcached-exporter
+    - prometheus-alertmanager
+    - prometheus-openstack-exporter
+    - prometheus-elasticsearch-exporter
+    - prometheus-blackbox-exporter
+    - prometheus-libvirt-exporter
+    - prometheus-openstack-network-exporter
+    - prometheus-valkey-exporter
+    - "&enable_prometheus_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ prometheus_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: prometheus,
-        tags: prometheus,
-        when: enable_prometheus | bool }
+    - { role: prometheus, tags: prometheus }
+
+- name: Apply role prometheus-node-exporters
+  gather_facts: false
+  hosts:
+    - prometheus-node-exporter
+    - prometheus-cadvisor
+    - "&enable_prometheus_True"
+  serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ prometheus_node_exporters_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  roles:
+    - { role: prometheus-node-exporters, tags: [prometheus, prometheus-node-exporters], when: enable_prometheus | bool }
 
 - name: Apply role iscsi
   gather_facts: false
   hosts:
     - iscsid
     - tgtd
+    - "&enable_iscsid_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ iscsid_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: iscsi,
-        tags: iscsi,
-        when: enable_iscsid | bool }
+    - { role: iscsi, tags: iscsi }
 
 - name: Apply role multipathd
   gather_facts: false
   hosts:
     - multipathd
+    - "&enable_multipathd_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ multipathd_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: multipathd,
-        tags: multipathd,
-        when: enable_multipathd | bool }
+    - { role: multipathd, tags: multipathd }
 
 - name: Apply role rabbitmq
-  gather_facts: false
-  hosts: rabbitmq
-  roles:
-    - { role: rabbitmq,
-        tags: rabbitmq,
-        role_rabbitmq_cluster_cookie: '{{ rabbitmq_cluster_cookie }}',
-        role_rabbitmq_cluster_port: '{{ rabbitmq_cluster_port }}',
-        role_rabbitmq_epmd_port: '{{ rabbitmq_epmd_port }}',
-        role_rabbitmq_groups: rabbitmq,
-        role_rabbitmq_management_port: '{{ rabbitmq_management_port }}',
-        role_rabbitmq_monitoring_password: '{{ rabbitmq_monitoring_password }}',
-        role_rabbitmq_monitoring_user: '{{ rabbitmq_monitoring_user }}',
-        role_rabbitmq_password: '{{ rabbitmq_password }}',
-        role_rabbitmq_port: '{{ rabbitmq_port }}',
-        role_rabbitmq_user: '{{ rabbitmq_user }}',
-        when: enable_rabbitmq | bool }
-
-- name: Apply role rabbitmq (outward)
-  gather_facts: false
-  hosts: outward-rabbitmq
-  roles:
-    - { role: rabbitmq,
-        tags: rabbitmq,
-        project_name: outward_rabbitmq,
-        role_rabbitmq_cluster_cookie: '{{ outward_rabbitmq_cluster_cookie }}',
-        role_rabbitmq_cluster_port: '{{ outward_rabbitmq_cluster_port }}',
-        role_rabbitmq_epmd_port: '{{ outward_rabbitmq_epmd_port }}',
-        role_rabbitmq_groups: outward-rabbitmq,
-        role_rabbitmq_management_port: '{{ outward_rabbitmq_management_port }}',
-        role_rabbitmq_password: '{{ outward_rabbitmq_password }}',
-        role_rabbitmq_port: '{{ outward_rabbitmq_port }}',
-        role_rabbitmq_user: '{{ outward_rabbitmq_user }}',
-        when: enable_outward_rabbitmq | bool }
-
-- name: Apply role qdrouterd
-  gather_facts: false
-  hosts: qdrouterd
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: qdrouterd,
-        tags: qdrouterd,
-        when: enable_qdrouterd | bool }
+  import_playbook: rabbitmq.yml
 
 - name: Apply role etcd
   gather_facts: false
-  hosts: etcd
-  serial: '{{ kolla_serial|default("0") }}'
+  hosts:
+    - etcd
+    - "&enable_etcd_True"
+  max_fail_percentage: >-
+    {{ etcd_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: etcd,
-        tags: etcd,
-        when: enable_etcd | bool }
+    - { role: etcd, tags: etcd }
 
 - name: Apply role keystone
   gather_facts: false
-  hosts: keystone
+  hosts:
+    - keystone
+    - "&enable_keystone_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ keystone_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: keystone,
-        tags: keystone,
-        when: enable_keystone | bool }
+    - { role: keystone, tags: keystone }
 
-- name: Apply role ceph
+- name: Apply role ceph-rgw
   gather_facts: false
   hosts:
-    - ceph-mds
-    - ceph-mgr
-    - ceph-mon
-    - ceph-nfs
-    - ceph-osd
-    - ceph-rgw
+    # NOTE(mgoddard): This is only used to register Keystone services, and
+    # can run on any host running kolla_toolbox.
+    - kolla_toolbox
+    - "&enable_ceph_rgw_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ ceph_rgw_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: ceph,
-        tags: ceph,
-        when: enable_ceph | bool }
-
-- name: Apply role kafka
-  gather_facts: false
-  hosts: kafka
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: kafka,
-        tags: kafka,
-        when: enable_kafka | bool }
-
-- name: Apply role storm
-  hosts:
-    - storm-worker
-    - storm-nimbus
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: storm,
-        tags: storm,
-        when: enable_storm | bool }
-
-- name: Apply role karbor
-  gather_facts: false
-  hosts: karbor
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: karbor,
-        tags: karbor,
-        when: enable_karbor | bool }
-
-- name: Apply role swift
-  gather_facts: false
-  hosts:
-    - swift-account-server
-    - swift-container-server
-    - swift-object-server
-    - swift-proxy-server
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: swift,
-        tags: swift,
-        when: enable_swift | bool }
+    - { role: ceph-rgw, tags: ceph-rgw }
 
 - name: Apply role glance
   gather_facts: false
   hosts:
-    - ceph-mon
     - glance-api
-    - glance-registry
+    - "&enable_glance_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ glance_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: glance,
-        tags: glance,
-        when: enable_glance | bool }
+    - { role: glance, tags: glance }
 
 - name: Apply role ironic
   gather_facts: false
   hosts:
     - ironic-api
     - ironic-conductor
-    - ironic-inspector
-    - ironic-pxe
+    - ironic-tftp
+    - ironic-http
+    - "&enable_ironic_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ ironic_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: ironic,
-        tags: ironic,
-        when: enable_ironic | bool }
+    - { role: ironic, tags: ironic }
 
 - name: Apply role cinder
   gather_facts: false
   hosts:
-    - ceph-mon
     - cinder-api
     - cinder-backup
+    - cinder-backup-lvm
+    - cinder-backup-multiple
     - cinder-scheduler
     - cinder-volume
+    - cinder-volume-lvm
+    - cinder-volume-multiple
+    - "&enable_cinder_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ cinder_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: cinder,
-        tags: cinder,
-        when: enable_cinder | bool }
+    - { role: cinder, tags: cinder }
 
-- name: Apply role nova
+- name: Apply role placement
   gather_facts: false
   hosts:
-    - ceph-mon
-    - compute
-    - nova-api
-    - nova-conductor
-    - nova-consoleauth
-    - nova-novncproxy
-    - nova-scheduler
+    - placement-api
+    - "&enable_placement_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ placement_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: nova,
-        tags: nova,
-        when: enable_nova | bool }
-
-- name: Apply role opendaylight
-  gather_facts: false
-  hosts: opendaylight
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: opendaylight,
-        tags: opendaylight,
-        when: enable_opendaylight | bool }
+    - { role: placement, tags: placement }
 
 - name: Apply role openvswitch
   gather_facts: false
   hosts:
     - openvswitch
+    - "&enable_openvswitch_True_enable_ovs_dpdk_False"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ openvswitch_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: openvswitch,
-        tags: openvswitch,
-        when: "(enable_openvswitch | bool) and not (enable_ovs_dpdk | bool)"}
+    - { role: openvswitch, tags: openvswitch, when: "(enable_openvswitch | bool) and not (enable_ovs_dpdk | bool)" }
 
 - name: Apply role ovs-dpdk
   gather_facts: false
   hosts:
     - openvswitch
+    - "&enable_openvswitch_True_enable_ovs_dpdk_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ ovs_dpdk_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: ovs-dpdk,
-        tags: ovs-dpdk,
-        when: "(enable_openvswitch | bool) and (enable_ovs_dpdk | bool)"}
+    - { role: ovs-dpdk, tags: ovs-dpdk, when: "(enable_openvswitch | bool) and (enable_ovs_dpdk | bool)" }
 
-- name: Apply role nova-hyperv
+- name: Apply role ovn-controller
   gather_facts: false
   hosts:
-    - hyperv
+    - ovn-controller
+    - "&enable_ovn_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ ovn_controller_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: nova-hyperv,
-        tags: nova-hyperv,
-        when: enable_hyperv | bool }
+    - { role: ovn-controller, tags: [ovn, ovn-controller] }
 
-# NOTE(gmmaha): Please do not change the order listed here. The current order is a
-# workaround to fix the bug https://bugs.launchpad.net/kolla/+bug/1546789
+- name: Apply role ovn-db
+  gather_facts: false
+  hosts:
+    - ovn-nb-db
+    - ovn-northd
+    - ovn-sb-db
+    - "&enable_ovn_True"
+  serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ ovn_db_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  roles:
+    - { role: ovn-db, tags: [ovn, ovn-db] }
+
+# Nova deployment is more complicated than other services, so is covered in its
+# own playbook.
+- name: Apply role nova
+  import_playbook: nova.yml
+
 - name: Apply role neutron
   gather_facts: false
   hosts:
     - neutron-server
     - neutron-dhcp-agent
     - neutron-l3-agent
-    - neutron-lbaas-agent
     - ironic-neutron-agent
     - neutron-metadata-agent
+    - neutron-ovn-metadata-agent
+    - neutron-metering-agent
+    - neutron-bgp-dragent
     - compute
     - manila-share
+    - "&enable_neutron_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ neutron_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: neutron,
-        tags: neutron,
-        when: enable_neutron | bool }
+    - { role: neutron, tags: neutron }
 
-- name: Apply role kuryr
+- name: Apply role hacluster
   gather_facts: false
   hosts:
-    - compute
+    - hacluster
+    - hacluster-remote
+    - "&enable_hacluster_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ hacluster_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: kuryr,
-        tags: kuryr,
-        when: enable_kuryr | bool }
+    - { role: hacluster, tags: hacluster }
 
 - name: Apply role heat
   gather_facts: false
@@ -678,56 +724,41 @@
     - heat-api
     - heat-api-cfn
     - heat-engine
+    - "&enable_heat_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ heat_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: heat,
-        tags: heat,
-        when: enable_heat | bool }
+    - { role: heat, tags: heat }
 
 - name: Apply role horizon
   gather_facts: false
   hosts:
     - horizon
+    - "&enable_horizon_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ horizon_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: horizon,
-        tags: horizon,
-        when: enable_horizon | bool }
-
-- name: Apply role murano
-  gather_facts: false
-  hosts:
-    - murano-api
-    - murano-engine
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: murano,
-        tags: murano,
-        when: enable_murano | bool }
-
-- name: Apply role solum
-  gather_facts: false
-  hosts:
-    - solum-api
-    - solum-worker
-    - solum-deployer
-    - solum-conductor
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: solum,
-        tags: solum,
-        when: enable_solum | bool }
+    - { role: horizon, tags: horizon }
 
 - name: Apply role magnum
   gather_facts: false
   hosts:
     - magnum-api
     - magnum-conductor
+    - "&enable_magnum_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ magnum_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: magnum,
-        tags: magnum,
-        when: enable_magnum | bool }
+    - { role: magnum, tags: magnum }
 
 - name: Apply role mistral
   gather_facts: false
@@ -735,93 +766,62 @@
     - mistral-api
     - mistral-engine
     - mistral-executor
+    - mistral-event-engine
+    - "&enable_mistral_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ mistral_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: mistral,
-        tags: mistral,
-        when: enable_mistral | bool }
-
-- name: Apply role sahara
-  gather_facts: false
-  hosts:
-    - sahara-api
-    - sahara-engine
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: sahara,
-        tags: sahara,
-        when: enable_sahara | bool }
-
-- name: Apply role mongodb
-  gather_facts: false
-  hosts:
-    - mongodb
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: mongodb,
-        tags: mongodb,
-        when: enable_mongodb | bool }
-
-- name: Apply role panko
-  gather_facts: false
-  hosts: panko-api
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: panko,
-        tags: panko,
-        when: enable_panko | bool }
+    - { role: mistral, tags: mistral }
 
 - name: Apply role manila
   gather_facts: false
   hosts:
-    - ceph-mon
     - manila-api
     - manila-data
     - manila-share
     - manila-scheduler
+    - "&enable_manila_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ manila_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: manila,
-        tags: manila,
-        when: enable_manila | bool }
+    - { role: manila, tags: manila }
 
 - name: Apply role gnocchi
   gather_facts: false
   hosts:
-    - ceph-mon
     - gnocchi-api
     - gnocchi-metricd
     - gnocchi-statsd
+    - "&enable_gnocchi_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ gnocchi_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: gnocchi,
-        tags: gnocchi,
-        when: enable_gnocchi | bool }
+    - { role: gnocchi, tags: gnocchi }
 
 - name: Apply role ceilometer
   gather_facts: false
-  vars_files:
-    - "roles/panko/defaults/main.yml"
   hosts:
     - ceilometer-central
     - ceilometer-notification
     - ceilometer-compute
+    - ceilometer-ipmi
+    - "&enable_ceilometer_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ ceilometer_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: ceilometer,
-        tags: ceilometer,
-        when: enable_ceilometer | bool }
-
-- name: Apply role monasca
-  gather_facts: false
-  hosts:
-    - monasca
-    - monasca-agent
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: monasca,
-        tags: monasca,
-        when: enable_monasca | bool }
+    - { role: ceilometer, tags: ceilometer }
 
 - name: Apply role aodh
   gather_facts: false
@@ -830,11 +830,14 @@
     - aodh-evaluator
     - aodh-listener
     - aodh-notifier
+    - "&enable_aodh_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ aodh_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: aodh,
-        tags: aodh,
-        when: enable_aodh | bool }
+    - { role: aodh, tags: aodh }
 
 - name: Apply role barbican
   gather_facts: false
@@ -842,33 +845,29 @@
     - barbican-api
     - barbican-keystone-listener
     - barbican-worker
+    - "&enable_barbican_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ barbican_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: barbican,
-        tags: barbican,
-        when: enable_barbican | bool }
+    - { role: barbican, tags: barbican }
 
-- name: Apply role congress
+- name: Apply role cyborg
   gather_facts: false
   hosts:
-    - congress-api
-    - congress-policy-engine
-    - congress-datasource
-  serial: '{{ kolla_serial|default("0") }}'
+    - cyborg-api
+    - cyborg-agent
+    - cyborg-conductor
+    - "&enable_cyborg_True"
+  serial: '{{ serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ cyborg_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: congress,
-        tags: congress,
-        when: enable_congress | bool }
-
-- name: Apply role tempest
-  gather_facts: false
-  hosts:
-    - tempest
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: tempest,
-        tags: tempest,
-        when: enable_tempest | bool }
+    - { role: cyborg, tags: cyborg }
 
 - name: Apply role designate
   gather_facts: false
@@ -880,30 +879,14 @@
     - designate-worker
     - designate-sink
     - designate-backend-bind9
+    - "&enable_designate_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ designate_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: designate,
-        tags: designate,
-        when: enable_designate | bool }
-
-- name: Apply role rally
-  gather_facts: false
-  hosts: rally
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: rally,
-        tags: rally,
-        when: enable_rally | bool }
-
-- name: Apply role vmtp
-  gather_facts: false
-  hosts:
-    - vmtp
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: vmtp,
-        tags: vmtp,
-        when: enable_vmtp | bool }
+    - { role: designate, tags: designate }
 
 - name: Apply role trove
   gather_facts: false
@@ -911,11 +894,14 @@
     - trove-api
     - trove-conductor
     - trove-taskmanager
+    - "&enable_trove_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ trove_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: trove,
-        tags: trove,
-        when: enable_trove | bool }
+    - { role: trove, tags: trove }
 
 - name: Apply role watcher
   gather_facts: false
@@ -923,76 +909,55 @@
     - watcher-api
     - watcher-engine
     - watcher-applier
+    - "&enable_watcher_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ watcher_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: watcher,
-        tags: watcher,
-        when: enable_watcher | bool }
+    - { role: watcher, tags: watcher }
 
 - name: Apply role grafana
   gather_facts: false
   hosts:
     - grafana
+    - "&enable_grafana_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ grafana_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: grafana,
-        tags: grafana,
-        when: enable_grafana | bool }
+    - { role: grafana, tags: grafana }
 
 - name: Apply role cloudkitty
   gather_facts: false
   hosts:
     - cloudkitty-api
     - cloudkitty-processor
+    - "&enable_cloudkitty_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ cloudkitty_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: cloudkitty,
-        tags: cloudkitty,
-        when: enable_cloudkitty | bool }
-
-- name: Apply role freezer
-  gather_facts: false
-  hosts:
-    - freezer-api
-    - freezer-scheduler
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: freezer,
-        tags: freezer,
-        when: enable_freezer | bool }
-
-- name: Apply role senlin
-  gather_facts: false
-  hosts:
-    - senlin-api
-    - senlin-engine
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: senlin,
-        tags: senlin,
-        when: enable_senlin | bool }
-
-- name: Apply role searchlight
-  gather_facts: false
-  hosts:
-    - searchlight-api
-    - searchlight-listener
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: searchlight,
-        tags: searchlight,
-        when: enable_searchlight | bool }
+    - { role: cloudkitty, tags: cloudkitty }
 
 - name: Apply role tacker
   gather_facts: false
   hosts:
     - tacker-server
     - tacker-conductor
+    - "&enable_tacker_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ tacker_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: tacker,
-        tags: tacker,
-        when: enable_tacker | bool }
+    - { role: tacker, tags: tacker }
 
 - name: Apply role octavia
   gather_facts: false
@@ -1001,56 +966,54 @@
     - octavia-health-manager
     - octavia-housekeeping
     - octavia-worker
+    - "&enable_octavia_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ octavia_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: octavia,
-        tags: octavia,
-        when: enable_octavia | bool }
-
-- name: Apply role zun
-  gather_facts: false
-  hosts:
-    - zun-api
-    - zun-wsproxy
-    - zun-compute
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: zun,
-        tags: zun,
-        when: enable_zun | bool }
-
-- name: Apply role skydive
-  gather_facts: false
-  hosts:
-    - skydive-agent
-    - skydive-analyzer
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: skydive,
-        tags: skydive,
-        when: enable_skydive | bool }
-
-- name: Apply role vitrage
-  gather_facts: false
-  hosts:
-    - vitrage-api
-    - vitrage-graph
-    - vitrage-notifier
-    - vitrage-collector
-    - vitrage-ml
-  serial: '{{ kolla_serial|default("0") }}'
-  roles:
-    - { role: vitrage,
-        tags: vitrage,
-        when: enable_vitrage | bool }
+    - { role: octavia, tags: octavia }
 
 - name: Apply role blazar
   gather_facts: false
   hosts:
     - blazar-api
     - blazar-manager
+    - "&enable_blazar_True"
   serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ blazar_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
   roles:
-    - { role: blazar,
-        tags: blazar,
-        when: enable_blazar | bool }
+    - { role: blazar, tags: blazar }
+
+- name: Apply role masakari
+  gather_facts: false
+  hosts:
+    - masakari-api
+    - masakari-engine
+    - masakari-hostmonitor
+    - masakari-instancemonitor
+    - "&enable_masakari_True"
+  serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ masakari_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  roles:
+    - { role: masakari, tags: masakari }
+
+- name: Apply role skyline
+  gather_facts: false
+  hosts:
+    - skyline
+    - "&enable_skyline_True"
+  serial: '{{ kolla_serial|default("0") }}'
+  max_fail_percentage: >-
+    {{ skyline_max_fail_percentage |
+       default(kolla_max_fail_percentage) |
+       default(100) }}
+  roles:
+    - { role: skyline, tags: skyline }

@@ -3,10 +3,8 @@
   vars:
     service_name: "collectd"
     service: "{{ collectd_services[service_name] }}"
-    config_json: "{{ collectd_config_jsons.results|selectattr('item.key', 'equalto', service_name)|first }}"
-    collectd_container: "{{ check_collectd_containers.results|selectattr('item.key', 'equalto', service_name)|first }}"
   become: true
-  kolla_docker:
+  kolla_container:
     action: "recreate_or_restart_container"
     common_options: "{{ docker_common_options }}"
     name: "{{ service.container_name }}"
@@ -14,10 +12,3 @@
     privileged: "{{ service.privileged | default(False) }}"
     volumes: "{{ service.volumes }}"
     dimensions: "{{ service.dimensions }}"
-  when:
-    - kolla_action != "config"
-    - inventory_hostname in groups[service.group]
-    - service.enabled | bool
-    - config_json.changed | bool
-      or collectd_conf.changed | bool
-      or collectd_container.changed | bool

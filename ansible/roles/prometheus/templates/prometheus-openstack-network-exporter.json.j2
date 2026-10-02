@@ -1,0 +1,36 @@
+{
+    "command": "/opt/openstack-network-exporter/openstack-network-exporter",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/openstack-network-exporter.yaml",
+            "dest": "/etc/openstack-network-exporter.yaml",
+            "owner": "prometheus",
+            "perm": "0600"
+        }{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/prometheus",
+            "owner": "prometheus:kolla",
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/prometheus/*.log",
+            "owner": "prometheus:kolla",
+            "perm": "0664"
+        }
+    ]
+}

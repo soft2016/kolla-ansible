@@ -1,19 +1,35 @@
 ---
-- name: Taking {{ mariadb_backup_type }} database backup via XtraBackup
-  kolla_docker:
+- name: Get MariaDB container facts
+  become: true
+  kolla_container_facts:
+    action: get_containers
+    container_engine: "{{ kolla_container_engine }}"
+    name:
+      - "{{ mariadb_services.mariadb.container_name }}"
+  check_mode: false
+  register: container_facts
+
+- name: Taking database backup via Mariabackup - backup type {{ mariadb_backup_type }}
+  become: true
+  kolla_container:
     action: "start_container"
+    command: "bash -c 'sudo -E kolla_set_configs && /usr/local/bin/kolla_mariadb_backup.sh'"
     common_options: "{{ docker_common_options }}"
-    image: "{{ xtrabackup_image_full }}"
-    name: "xtrabackup"
-    restart_policy: "never"
-    remove_on_exit: True
+    detach: false
+    # NOTE(mgoddard): Try to use the same image as the MariaDB server container
+    # to avoid compatibility issues. See
+    # https://bugs.launchpad.net/kolla-ansible/+bug/2058644.
+    image: "{{ container_facts.containers[mariadb_services.mariadb.container_name].Config.Image | default(mariadb_services.mariadb.image) }}"
+    name: "mariabackup"
+    restart_policy: oneshot
+    remove_on_exit: true
     environment:
       BACKUP_TYPE: "{{ mariadb_backup_type }}"
     volumes:
-      - "{{ node_config_directory }}xtrabackup:/etc/mysql:ro"
-      - "/etc/localtime:/etc/localtime:ro"
+      - "{{ node_config_directory }}/mariabackup/:{{ container_config_directory }}/:ro"
+      - "mariadb:/var/lib/mysql"
       - "mariadb_backup:/backup"
-    volumes_from:
-      - "mariadb"
+      - "kolla_logs:/var/log/kolla/"
   when:
     - inventory_hostname == mariadb_backup_host
+    - mariadb_backup_possible | bool

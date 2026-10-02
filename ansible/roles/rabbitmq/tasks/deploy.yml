@@ -1,7 +1,15 @@
 ---
-- include_tasks: config.yml
+- name: Import tasks from version-check.yml
+  ansible.builtin.import_tasks: version-check.yml
 
-- include_tasks: bootstrap.yml
+- name: Include tasks from remove-ha-all-policy.yml
+  ansible.builtin.include_tasks: remove-ha-all-policy.yml
 
-- name: Flush handlers
-  meta: flush_handlers
+- name: Configure rabbitmq
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check rabbitmq containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Bootstrap rabbitmq service
+  ansible.builtin.import_tasks: bootstrap.yml

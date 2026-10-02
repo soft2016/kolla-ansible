@@ -1,0 +1,6 @@
+---
+- name: Import tasks from register.yml
+  ansible.builtin.import_tasks: register.yml
+
+- name: Import tasks from check.yml
+  ansible.builtin.import_tasks: check.yml

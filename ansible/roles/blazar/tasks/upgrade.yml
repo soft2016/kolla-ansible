@@ -1,7 +1,12 @@
 ---
-- include_tasks: config.yml
+- name: Configure blazar
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: bootstrap_service.yml
+- name: Check blazar containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Run blazar bootstrap container
+  ansible.builtin.import_tasks: bootstrap_service.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

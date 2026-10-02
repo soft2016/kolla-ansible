@@ -3,23 +3,28 @@
 debug = {{ designate_logging_debug }}
 
 log_dir = /var/log/kolla/designate
+{% if service_name == 'designate-api' %}
+log_file = /var/log/kolla/designate/{{ service_name }}.log
+{% endif %}
 
 transport_url = {{ rpc_transport_url }}
 
 [service:central]
 default_pool_id = {{ designate_pool_id }}
-workers = {{ openstack_service_workers }}
+workers = {{ designate_central_workers }}
 
 [service:api]
-listen = {{ api_interface_address }}:{{ designate_api_port }}
-api_base_uri = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ designate_api_port }}
-enabled_extensions_v2 = 'quotas, reports'
-workers = {{ openstack_service_workers }}
-enable_host_header = True
+listen = {{ api_interface_address | put_address_in_context('url') }}:{{ designate_api_listen_port }}
+api_base_uri = {{ designate_internal_endpoint }}
+workers = {{ designate_api_workers }}
+enable_api_admin = true
+enable_host_header = true
+enabled_extensions_admin = quotas, reports
 
 [keystone_authtoken]
-www_authenticate_uri = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_public_port }}
-auth_url = {{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_admin_port }}
+service_type = dns
+www_authenticate_uri = {{ keystone_public_url }}
+auth_url = {{ keystone_internal_url }}
 auth_type = password
 project_domain_id = {{ default_project_domain_id }}
 user_domain_id = {{ default_user_domain_id }}
@@ -27,60 +32,45 @@ project_name = service
 username = {{ designate_keystone_user }}
 password = {{ designate_keystone_password }}
 http_connect_timeout = 60
-service_token_roles_required = True
+service_token_roles_required = true
+cafile = {{ openstack_cacert }}
+region_name = {{ openstack_region_name }}
 
-memcache_security_strategy = ENCRYPT
+memcache_security_strategy = {{ memcache_security_strategy }}
 memcache_secret_key = {{ memcache_secret_key }}
-memcached_servers = {% for host in groups['memcached'] %}{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
-
-[service:sink]
-enabled_notification_handlers = nova_fixed, neutron_floatingip
-workers = {{ openstack_service_workers }}
+memcached_servers = {% for host in groups['memcached'] %}{{ 'api' | kolla_address(host) | put_address_in_context('memcache') }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
 
 {% if service_name == 'designate-mdns' %}
 [service:mdns]
-listen = {{ hostvars[inventory_hostname]['ansible_' + dns_interface]['ipv4']['address'] }}:{{ designate_mdns_port }}
-workers = {{ openstack_service_workers }}
+listen = {{ 'dns' | kolla_address | put_address_in_context('url') }}:{{ designate_mdns_port }}
+workers = {{ designate_mdns_workers }}
 {% endif %}
 
 [service:worker]
-# TODO (egonzalez): Remove enabled option in worker section once https://bugs.launchpad.net/designate/+bug/1676827
-# is fixed. Enabled is deprecated but without explicitly enabling worker service not start
-enabled = True
-notify = True
-workers = {{ openstack_service_workers }}
+workers = {{ designate_worker_workers }}
 
 [service:producer]
-workers = {{ openstack_service_workers }}
+workers = {{ designate_producer_workers }}
 threads = 1000
-enabled_tasks = None
-export_synchronous = True
-
-[service:pool_manager]
-cache_driver = sqlalchemy
-pool_id = {{ designate_pool_id }}
-workers = {{ openstack_service_workers }}
 
 [network_api:neutron]
+ca_certificates_file = "{{ openstack_cacert }}"
 endpoint_type = internalURL
 
-[pool_manager_cache:sqlalchemy]
-connection = mysql+pymysql://{{ designate_pool_manager_database_user }}:{{ designate_pool_manager_database_password }}@{{ designate_pool_manager_database_address }}/{{ designate_pool_manager_database_name }}
-max_retries = 10
-idle_timeout = 3600
-
-[pool_manager_cache:memcache]
-memcached_servers = {% for host in groups['memcached'] %}{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
-
 [storage:sqlalchemy]
-connection = mysql+pymysql://{{ designate_database_user }}:{{ designate_database_password }}@{{ designate_database_address }}/{{ designate_database_name }}
+connection = mysql+pymysql://{{ designate_database_user }}:{{ designate_database_password }}@{{ designate_database_address }}/{{ designate_database_name }}{{ '?ssl_ca=' ~ openstack_cacert if designate_database_enable_tls_internal | bool }}
 max_retries = 10
 idle_timeout = 3600
+
+{% if service_name == 'designate-sink' and designate_enable_notifications_sink | bool %}
+[service:sink]
+enabled_notification_handlers = nova_fixed, neutron_floatingip
+workers = {{ designate_sink_workers }}
 
 [handler:nova_fixed]
 #NOTE: zone_id must be manually filled an ID from openstack zone list
 zone_id =
-notification_topics = notifications_designate
+notification_topics = {{ designate_notifications_topic_name }}
 control_exchange = nova
 formatv4 = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(zone)s'
 formatv4 = '%(hostname)s.%(project)s.%(zone)s'
@@ -91,22 +81,50 @@ formatv6 = '%(hostname)s.%(project)s.%(zone)s'
 [handler:neutron_floatingip]
 #NOTE: zone_id must be manually filled an ID from openstack zone list
 zone_id =
-notification_topics = notifications_designate
+notification_topics = {{ designate_notifications_topic_name }}
 control_exchange = neutron
 formatv4 = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(zone)s'
+{% endif %}
 
 [oslo_messaging_notifications]
 transport_url = {{ notify_transport_url }}
-topics = notifications_designate
+{% if designate_enabled_notification_topics %}
 driver = messagingv2
+topics = {{ designate_enabled_notification_topics | map(attribute='name') | join(',') }}
+{% else %}
+driver = noop
+{% endif %}
+
+[oslo_messaging_rabbit]
+use_queue_manager = true
+heartbeat_in_pthread = false
+{% if om_enable_rabbitmq_tls | bool %}
+ssl = true
+ssl_ca_file = {{ om_rabbitmq_cacert }}
+{% endif %}
+rabbit_quorum_queue = true
+{% if om_enable_rabbitmq_stream_fanout | bool %}
+rabbit_stream_fanout = true
+rabbit_qos_prefetch_count = {{ om_rabbitmq_qos_prefetch_count }}
+{% endif %}
+rabbit_transient_quorum_queue = true
 
 [oslo_concurrency]
 lock_path = /var/lib/designate/tmp
 
 [oslo_middleware]
-enable_proxy_headers_parsing = True
+enable_proxy_headers_parsing = true
 
 {% if designate_policy_file is defined %}
 [oslo_policy]
 policy_file = {{ designate_policy_file }}
 {% endif %}
+
+[coordination]
+{% if designate_coordination_backend == 'valkey' %}
+backend_url = {{ valkey_connection_string }}
+{% endif %}
+{#
+  NOTE(yoctozepto): etcd is not supported due to lack of group membership
+                    support via tooz, see https://launchpad.net/bugs/1872205
+#}

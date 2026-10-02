@@ -1,87 +1,163 @@
 ---
-project_name: "cloudkitty"
-
 cloudkitty_services:
   cloudkitty-api:
     container_name: "cloudkitty_api"
     group: "cloudkitty-api"
     image: "{{ cloudkitty_api_image_full }}"
-    enabled: True
-    volumes:
-      - "{{ node_config_directory }}/cloudkitty-api/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/cloudkitty/cloudkitty:/var/lib/kolla/venv/lib/python2.7/site-packages/cloudkitty' if cloudkitty_dev_mode | bool else '' }}"
+    enabled: true
+    volumes: "{{ cloudkitty_api_default_volumes + cloudkitty_api_extra_volumes }}"
     dimensions: "{{ cloudkitty_api_dimensions }}"
+    healthcheck: "{{ cloudkitty_api_healthcheck }}"
+    wsgi: "cloudkitty.wsgi.api:application"
     haproxy:
       cloudkitty_api:
         enabled: "{{ enable_cloudkitty }}"
         mode: "http"
         external: false
         port: "{{ cloudkitty_api_port }}"
+        listen_port: "{{ cloudkitty_api_listen_port }}"
+        frontend_http_extra:
+          - "timeout client {{ haproxy_cloudkitty_api_client_timeout }}"
+        backend_http_extra:
+          - "option httpchk GET /healthcheck"
+          - "http-check expect status 200"
+          - "timeout server {{ haproxy_cloudkitty_api_server_timeout }}"
       cloudkitty_api_external:
         enabled: "{{ enable_cloudkitty }}"
         mode: "http"
         external: true
-        port: "{{ cloudkitty_api_port }}"
+        external_fqdn: "{{ cloudkitty_external_fqdn }}"
+        port: "{{ cloudkitty_api_public_port }}"
+        listen_port: "{{ cloudkitty_api_listen_port }}"
+        frontend_http_extra:
+          - "timeout client {{ haproxy_cloudkitty_api_client_timeout }}"
+        backend_http_extra:
+          - "option httpchk GET /healthcheck"
+          - "http-check expect status 200"
+          - "timeout server {{ haproxy_cloudkitty_api_server_timeout }}"
   cloudkitty-processor:
     container_name: "cloudkitty_processor"
     group: "cloudkitty-processor"
     image: "{{ cloudkitty_processor_image_full }}"
-    enabled: True
-    volumes:
-      - "{{ node_config_directory }}/cloudkitty-processor/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "{{ kolla_dev_repos_directory ~ '/cloudkitty/cloudkitty:/var/lib/kolla/venv/lib/python2.7/site-packages/cloudkitty' if cloudkitty_dev_mode | bool else '' }}"
+    enabled: true
+    volumes: "{{ cloudkitty_processor_default_volumes + cloudkitty_processor_extra_volumes }}"
     dimensions: "{{ cloudkitty_processor_dimensions }}"
+    healthcheck: "{{ cloudkitty_processor_healthcheck }}"
 
+####################
+# Config Validate
+####################
+cloudkitty_config_validation:
+  - generator: "/cloudkitty/etc/oslo-config-generator/cloudkitty.conf"
+    config: "/etc/cloudkitty/cloudkitty.conf"
 
 ####################
 # Database
 ####################
 cloudkitty_database_name: "cloudkitty"
 cloudkitty_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}cloudkitty{% endif %}"
-cloudkitty_database_address: "{{ database_address }}:{{ database_port }}"
+cloudkitty_database_address: "{{ database_address | put_address_in_context('url') }}:{{ database_port }}"
+
+####################
+# HAProxy
+####################
+haproxy_cloudkitty_api_client_timeout: "1m"
+haproxy_cloudkitty_api_server_timeout: "1m"
+
+####################
+# Database sharding
+####################
+cloudkitty_database_shard_root_user: "{% if enable_proxysql | bool %}root_shard_{{ cloudkitty_database_shard_id }}{% else %}{{ database_user }}{% endif %}"
+cloudkitty_database_shard_id: "{{ mariadb_default_database_shard_id | int }}"
+cloudkitty_database_shard:
+  users:
+    - user: "{{ cloudkitty_database_user }}"
+      password: "{{ cloudkitty_database_password }}"
+      shard_id: "{{ cloudkitty_database_shard_id }}"
+  rules:
+    - schema: "{{ cloudkitty_database_name }}"
+      shard_id: "{{ cloudkitty_database_shard_id }}"
+    - user: "{{ cloudkitty_database_user }}"
+      shard_id: "{{ cloudkitty_database_shard_id }}"
 
 
 ####################
 # Docker
 ####################
-cloudkitty_install_type: "{{ kolla_install_type }}"
-cloudkitty_tag: "{{ openstack_release }}"
+cloudkitty_tag: "{{ openstack_tag }}"
 
-cloudkitty_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ cloudkitty_install_type }}-cloudkitty-api"
+cloudkitty_api_image: "{{ docker_image_url }}cloudkitty-api"
 cloudkitty_api_tag: "{{ cloudkitty_tag }}"
 cloudkitty_api_image_full: "{{ cloudkitty_api_image }}:{{ cloudkitty_api_tag }}"
 
-cloudkitty_processor_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ cloudkitty_install_type }}-cloudkitty-processor"
+cloudkitty_processor_image: "{{ docker_image_url }}cloudkitty-processor"
 cloudkitty_processor_tag: "{{ cloudkitty_tag }}"
 cloudkitty_processor_image_full: "{{ cloudkitty_processor_image }}:{{ cloudkitty_processor_tag }}"
 
 cloudkitty_processor_dimensions: "{{ default_container_dimensions }}"
 cloudkitty_api_dimensions: "{{ default_container_dimensions }}"
 
+cloudkitty_api_default_volumes:
+  - "{{ node_config_directory }}/cloudkitty-api/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ '/dev/shm:/dev/shm' }}"
+  - "{{ kolla_dev_repos_directory ~ '/cloudkitty:/dev-mode/cloudkitty' if cloudkitty_dev_mode | bool else '' }}"
+cloudkitty_processor_default_volumes:
+  - "{{ node_config_directory }}/cloudkitty-processor/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ '/dev/shm:/dev/shm' }}"
+  - "{{ kolla_dev_repos_directory ~ '/cloudkitty:/dev-mode/cloudkitty' if cloudkitty_dev_mode | bool else '' }}"
+
+cloudkitty_api_enable_healthchecks: "{{ enable_container_healthchecks }}"
+cloudkitty_api_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+cloudkitty_api_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+cloudkitty_api_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+cloudkitty_api_healthcheck_test:
+  - "CMD-SHELL"
+  - >-
+    healthcheck_curl http://{{
+    api_interface_address | put_address_in_context('url') }}:{{ cloudkitty_api_port }}/healthcheck
+cloudkitty_api_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+cloudkitty_api_healthcheck:
+  interval: "{{ cloudkitty_api_healthcheck_interval }}"
+  retries: "{{ cloudkitty_api_healthcheck_retries }}"
+  start_period: "{{ cloudkitty_api_healthcheck_start_period }}"
+  test: "{% if cloudkitty_api_enable_healthchecks | bool %}{{ cloudkitty_api_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ cloudkitty_api_healthcheck_timeout }}"
+
+cloudkitty_processor_enable_healthchecks: "{{ enable_container_healthchecks }}"
+cloudkitty_processor_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+cloudkitty_processor_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+cloudkitty_processor_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+cloudkitty_processor_healthcheck_test: ["CMD-SHELL", "healthcheck_port cloudkitty-processor {{ om_rpc_port }}"]
+cloudkitty_processor_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+cloudkitty_processor_healthcheck:
+  interval: "{{ cloudkitty_processor_healthcheck_interval }}"
+  retries: "{{ cloudkitty_processor_healthcheck_retries }}"
+  start_period: "{{ cloudkitty_processor_healthcheck_start_period }}"
+  test: "{% if cloudkitty_processor_enable_healthchecks | bool %}{{ cloudkitty_processor_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ cloudkitty_processor_healthcheck_timeout }}"
+
+cloudkitty_extra_volumes: "{{ default_extra_volumes }}"
+cloudkitty_processor_extra_volumes: "{{ cloudkitty_extra_volumes }}"
+cloudkitty_api_extra_volumes: "{{ cloudkitty_extra_volumes }}"
 
 ####################
 # OpenStack
 ####################
-cloudkitty_admin_endpoint: "{{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ cloudkitty_api_port }}"
-cloudkitty_internal_endpoint: "{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ cloudkitty_api_port }}"
-cloudkitty_public_endpoint: "{{ public_protocol }}://{{ kolla_external_fqdn }}:{{ cloudkitty_api_port }}"
-
 cloudkitty_logging_debug: "{{ openstack_logging_debug }}"
 
 cloudkitty_keystone_user: "cloudkitty"
 
 openstack_cloudkitty_auth: "{{ openstack_auth }}"
 
+cloudkitty_api_workers: "{{ openstack_service_workers }}"
+cloudkitty_processor_workers: "{{ openstack_service_workers }}"
 
 ####################
 # Cloudkitty
 ####################
 cloudkitty_openstack_keystone_default_role: "rating"
-
 
 ####################
 # Kolla
@@ -90,3 +166,82 @@ cloudkitty_git_repository: "{{ kolla_dev_repos_git }}/{{ project_name }}"
 cloudkitty_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
 cloudkitty_dev_mode: "{{ kolla_dev_mode }}"
 cloudkitty_source_version: "{{ kolla_source_version }}"
+cloudkitty_custom_metrics_yaml_file: "metrics.yml"
+
+####################
+# Storage backend
+####################
+# Set the elasticsearch/opensearch index name.
+cloudkitty_elasticsearch_index_name: "cloudkitty"
+cloudkitty_opensearch_index_name: "{{ cloudkitty_elasticsearch_index_name }}"
+
+# Set the elasticsearch/opensearch host URL.
+cloudkitty_elasticsearch_url: "{{ internal_protocol }}://{{ opensearch_address }}:{{ opensearch_port }}"
+cloudkitty_opensearch_url: "{{ cloudkitty_elasticsearch_url }}"
+
+# Path of the CA certificate to trust for HTTPS connections.
+cloudkitty_elasticsearch_cafile: "{{ openstack_cacert }}"
+
+# Set to true to authorize insecure HTTPS connections to Elasticsearch.
+# This means, HTTPS connections without validating the certificate used by elasticsearch
+cloudkitty_elasticsearch_insecure_connections: false
+
+# Path of the CA certificate to trust for HTTPS connections.
+cloudkitty_opensearch_cafile: "{{ openstack_cacert }}"
+
+# Set to true to authorize insecure HTTPS connections to OpenSearch.
+# This means, HTTPS connections without validating the certificate used by
+# OpenSearch.
+cloudkitty_opensearch_insecure_connections: false
+
+####################
+# Collector
+####################
+# Valid options are 'gnocchi' or 'prometheus'. The default value is
+# 'gnocchi', which matches the default in Cloudkitty.
+cloudkitty_collector_backend: "gnocchi"
+
+# Set prometheus collector URL.
+cloudkitty_prometheus_url: "{{ internal_protocol }}://{{ kolla_internal_fqdn | put_address_in_context('url') }}:{{ prometheus_port }}/api/v1"
+
+# Path of the CA certificate to trust for HTTPS connections.
+cloudkitty_prometheus_cafile: "{{ openstack_cacert }}"
+
+# Set to true to authorize insecure HTTPS connections to Prometheus.
+# This means, HTTPS connections without validating the certificate used by prometheus.
+cloudkitty_prometheus_insecure_connections: false
+
+####################
+# Fetcher
+####################
+# Valid options are 'keystone', 'source', 'gnocchi' or 'prometheus'.
+# The default value is 'keystone', which matches the default in CloudKitty.
+cloudkitty_fetcher_backend: "keystone"
+
+####################
+# Keystone
+####################
+cloudkitty_ks_services:
+  - name: "cloudkitty"
+    type: "rating"
+    description: "OpenStack Rating"
+    endpoints:
+      - {'interface': 'internal', 'url': '{{ cloudkitty_internal_endpoint }}'}
+      - {'interface': 'public', 'url': '{{ cloudkitty_public_endpoint }}'}
+
+cloudkitty_ks_users:
+  - project: "service"
+    user: "{{ cloudkitty_keystone_user }}"
+    password: "{{ cloudkitty_keystone_password }}"
+    role: "admin"
+
+cloudkitty_ks_roles:
+  - "{{ cloudkitty_openstack_keystone_default_role }}"
+
+# Database
+cloudkitty_database_enable_tls_internal: "{{ database_enable_tls_internal | bool }}"
+
+###################
+# Copy certificates
+###################
+cloudkitty_copy_certs: "{{ kolla_copy_ca_into_containers | bool or cloudkitty_database_enable_tls_internal | bool }}"

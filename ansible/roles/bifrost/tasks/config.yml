@@ -1,6 +1,6 @@
 ---
 - name: Ensuring config directories exist
-  file:
+  ansible.builtin.file:
     path: "{{ node_config_directory }}/{{ item }}"
     state: "directory"
     owner: "{{ config_owner_user }}"
@@ -17,6 +17,7 @@
       - "{{ node_custom_config }}/{{ item }}.yml"
       - "{{ node_custom_config }}/bifrost/{{ item }}.yml"
     dest: "{{ node_config_directory }}/bifrost/{{ item }}.yml"
+    yaml_width: 131072
     mode: "0660"
   become: true
   with_items:
@@ -24,17 +25,8 @@
     - "dib"
     - "servers"
 
-- name: Copying over rabbitmq config
-  template:
-    src: "{{ item }}"
-    dest: "{{ node_config_directory }}/bifrost/{{ item }}"
-    mode: "0660"
-  become: true
-  with_items:
-    - "rabbitmq-env.conf"
-
 - name: Template ssh keys
-  template:
+  ansible.builtin.template:
     src: "{{ item.src }}"
     dest: "{{ node_config_directory }}/bifrost/{{ item.dest }}"
     mode: "0660"
@@ -43,17 +35,3 @@
     - { src: "id_rsa", dest: "id_rsa" }
     - { src: "id_rsa.pub", dest: "id_rsa.pub" }
     - { src: "ssh_config", dest: "ssh_config" }
-
-# NOTE(mgoddard): The following task was lifted from a Bifrost play
-# (playbooks/roles/bifrost-ironic-install/tasks/bootstrap.yml).  Because
-# Bifrost cannot modify /etc/hosts from within the container we must do it
-# here.
-- name: "Ensure /etc/hosts has good defaults"
-  lineinfile:
-    dest: "/etc/hosts"
-    regexp: "{{ item.regexp }}.*({{ ansible_hostname }}|localhost).*"
-    line: "{{ item.contents }}"
-  with_items:
-    - { regexp: '^127\.0\.0\.1', contents: '127.0.0.1 {{ ansible_hostname }} {{ ansible_fqdn }} localhost' }
-    - { regexp: '^::1', contents: '::1 {{ ansible_hostname }} {{ ansible_fqdn }} localhost ipv6-localhost ipv6-loopback' }
-  become: true

@@ -1,30 +1,33 @@
 ---
 - name: Creating Nova databases
+  become: true
   kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
     module_name: mysql_db
     module_args:
+      ca_cert: "{{ openstack_cacert if database_enable_tls_internal | bool else omit }}"
       login_host: "{{ database_address }}"
       login_port: "{{ database_port }}"
-      login_user: "{{ database_user }}"
+      login_user: "{{ nova_database_shard_root_user }}"
       login_password: "{{ database_password }}"
       name: "{{ item }}"
-  register: database
-  run_once: True
-  delegate_to: "{{ groups['nova-api'][0] }}"
+  run_once: true
   with_items:
-    - "{{ nova_database_name }}"
-    - "{{ nova_database_name }}_cell0"
+    - "{{ nova_cell0_database_name }}"
     - "{{ nova_api_database_name }}"
   when:
     - not use_preconfigured_databases | bool
 
 - name: Creating Nova databases user and setting permissions
+  become: true
   kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
     module_name: mysql_user
     module_args:
+      ca_cert: "{{ openstack_cacert if database_enable_tls_internal | bool else omit }}"
       login_host: "{{ database_address }}"
       login_port: "{{ database_port }}"
-      login_user: "{{ database_user }}"
+      login_user: "{{ nova_database_shard_root_user }}"
       login_password: "{{ database_password }}"
       name: "{{ item.database_username }}"
       password: "{{ item.database_password }}"
@@ -32,21 +35,28 @@
       priv: "{{ item.database_name }}.*:ALL"
       append_privs: "yes"
   with_items:
-    - database_name: "{{ nova_database_name }}"
-      database_username: "{{ nova_database_user }}"
-      database_password: "{{ nova_database_password }}"
-    - database_name: "{{ nova_database_name }}_cell0"
-      database_username: "{{ nova_database_user }}"
-      database_password: "{{ nova_database_password }}"
+    - database_name: "{{ nova_cell0_database_name }}"
+      database_username: "{{ nova_cell0_database_user }}"
+      database_password: "{{ nova_cell0_database_password }}"
     - database_name: "{{ nova_api_database_name }}"
       database_username: "{{ nova_api_database_user }}"
       database_password: "{{ nova_api_database_password }}"
-  run_once: True
-  delegate_to: "{{ groups['nova-api'][0] }}"
+  loop_control:
+    label: "{{ item.database_name }}"
+  run_once: true
   when:
-    - database.changed
     - not use_preconfigured_databases | bool
   no_log: true
 
-- include_tasks: bootstrap_service.yml
-  when: database.changed or use_preconfigured_databases | bool
+- name: Import tasks from config_bootstrap.yml
+  ansible.builtin.import_tasks: config_bootstrap.yml
+
+- name: Include tasks from clone.yml
+  ansible.builtin.include_tasks: clone.yml
+  when: nova_dev_mode | bool
+
+- name: Run nova bootstrap container
+  ansible.builtin.import_tasks: bootstrap_service.yml
+
+- name: Import tasks from map_cell0.yml
+  ansible.builtin.import_tasks: map_cell0.yml

@@ -1,9 +1,9 @@
-dbus [platform:dpkg]
-libffi-dev [platform:dpkg]
-libffi-devel [platform:rpm]
-gcc [platform:rpm]
-gcc [platform:dpkg]
-python-dev [platform:dpkg]
-python-devel [platform:rpm]
-openssl-devel [platform:rpm]
-libssl-dev [platform:dpkg]
+# This is a cross-platform list tracking distribution packages needed for
+# install and tests; see https://docs.opendev.org/opendev/bindep/latest/ for
+# additional information.
+# NOTE(mnasiadka): Currently added to irrelevant-files due to usage only
+#                  in docs job - if usage is extended - needs removal from
+#                  there.
+
+libpcre2-dev [platform:dpkg doc]
+pcre2-devel [platform:rpm doc]

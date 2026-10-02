@@ -1,8 +1,12 @@
-{% set keystone_cmd = 'apache2' if kolla_base_distro in ['ubuntu', 'debian'] else 'httpd' %}
-{% set keystone_dir = 'apache2/conf-enabled' if kolla_base_distro in ['ubuntu', 'debian'] else 'httpd/conf.d' %}
 {
-    "command": "/usr/sbin/{{ keystone_cmd }}",
+    "command": "/usr/bin/keystone-startup.sh",
     "config_files": [
+        {
+            "source": "{{ container_config_directory }}/keystone-startup.sh",
+            "dest": "/usr/bin/keystone-startup.sh",
+            "owner": "root",
+            "perm": "0755"
+        },
         {
             "source": "{{ container_config_directory }}/keystone.conf",
             "dest": "/etc/keystone/keystone.conf",
@@ -22,28 +26,62 @@
             "owner": "keystone",
             "perm": "0600",
             "optional": true
+        },
+        {
+            "source": "{{ container_config_directory }}/keystone-uwsgi.ini",
+            "dest": "/etc/keystone/keystone-api-uwsgi.ini",
+            "owner": "keystone",
+            "perm": "0600"
         }{% if keystone_policy_file is defined %},
         {
             "source": "{{ container_config_directory }}/{{ keystone_policy_file }}",
             "dest": "/etc/keystone/{{ keystone_policy_file }}",
             "owner": "keystone",
             "perm": "0600"
-        }{% endif %},
+        }{% endif %}{% if keystone_enable_tls_backend | bool %},
         {
-            "source": "{{ container_config_directory }}/wsgi-keystone.conf",
-            "dest": "/etc/{{ keystone_dir }}/wsgi-keystone.conf",
+            "source": "{{ container_config_directory }}/keystone-cert.pem",
+            "dest": "/etc/keystone/certs/keystone-cert.pem",
             "owner": "keystone",
             "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/keystone-key.pem",
+            "dest": "/etc/keystone/certs/keystone-key.pem",
+            "owner": "keystone",
+            "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/keystone",
+            "owner": "keystone:kolla",
+            "perm": "2775"
+        }
+    ],
+    "files": [
+        {
+            "path": "/var/log/kolla/keystone/keystone.log",
+            "owner": "keystone:kolla",
+            "perm": "0664"
         }
     ],
     "permissions": [
         {
-            "path": "/var/log/kolla",
-            "owner": "keystone:kolla"
-        },
-        {
-            "path": "/var/log/kolla/keystone/keystone.log",
-            "owner": "keystone:keystone"
+            "path": "/var/log/kolla/keystone/*.log",
+            "owner": "keystone:kolla",
+            "perm": "0664"
         },
         {
             "path": "/etc/keystone/fernet-keys",

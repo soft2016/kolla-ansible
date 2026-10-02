@@ -1,30 +1,27 @@
 ---
-project_name: "multipathd"
-
 multipathd_services:
   multipathd:
     container_name: multipathd
     group: multipathd
     enabled: true
     ipc_mode: "host"
-    privileged: True
+    privileged: true
     image: "{{ multipathd_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/multipathd/:{{ container_config_directory }}/:ro"
-      - "kolla_logs:/var/log/kolla/"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/dev/:/dev/"
-      - "/run/:/run/:shared"
-      - "/sys/fs/cgroup:/sys/fs/cgroup:ro"
-      - "/lib/modules:/lib/modules:ro"
-      - "/sys/kernel/config:/configfs"
-      - "cinder:/var/lib/cinder"
-      - "iscsi_info:/etc/iscsi"
+    volumes: "{{ multipathd_default_volumes + multipathd_extra_volumes + lookup('vars', 'run_default_volumes_' + kolla_container_engine) }}"
 
 
 ####################
 # Docker
 ####################
-multipathd_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-multipathd"
-multipathd_tag: "{{ openstack_release }}"
+multipathd_image: "{{ docker_image_url }}multipathd"
+multipathd_tag: "{{ openstack_tag }}"
 multipathd_image_full: "{{ multipathd_image }}:{{ multipathd_tag }}"
+
+multipathd_default_volumes:
+  - "{{ node_config_directory }}/multipathd/:{{ container_config_directory }}/:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "/dev/:/dev/"
+  - "/run:/run{{ ':shared' if kolla_container_engine == 'docker' else '' }}"
+  - "/lib/modules:/lib/modules:ro"
+  - "/sys/kernel/config:/configfs"
+multipathd_extra_volumes: "{{ default_extra_volumes }}"

@@ -1,0 +1,128 @@
+{
+    "command": "/usr/local/bin/kolla_nova_libvirt_start",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/libvirtd.conf",
+            "dest": "/etc/libvirt/libvirtd.conf",
+            "owner": "root",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/qemu.conf",
+            "dest": "/etc/libvirt/qemu.conf",
+            "owner": "root",
+            "perm": "0600"
+        }{% if libvirt_tls | bool %},
+        {
+            "source": "{{ container_config_directory }}/serverkey.pem",
+            "dest": "/etc/pki/libvirt/private/serverkey.pem",
+            "owner": "root",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/servercert.pem",
+            "dest": "/etc/pki/libvirt/servercert.pem",
+            "owner": "root",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/clientkey.pem",
+            "dest": "/etc/pki/libvirt/private/clientkey.pem",
+            "owner": "root",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/clientcert.pem",
+            "dest": "/etc/pki/libvirt/clientcert.pem",
+            "owner": "root",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/cacert.pem",
+            "dest": "/etc/pki/CA/cacert.pem",
+            "owner": "root",
+            "perm": "0600"
+        }{% endif %}{% if nova_backend == "rbd" or cinder_backend_ceph | bool %},
+        {
+            "source": "{{ container_config_directory }}/secrets",
+            "dest": "/etc/libvirt/secrets",
+            "owner": "root",
+            "perm": "0600",
+            "merge": true
+        }{% endif %}{% if nova_backend == "rbd" %},
+        {
+            "source": "{{ container_config_directory }}/{{ nova_cell_ceph_backend['cluster'] }}.conf",
+            "dest": "/etc/ceph/{{ nova_cell_ceph_backend['cluster'] }}.conf",
+            "owner": "nova",
+            "perm": "0600"
+        }{% endif %}{% if libvirt_enable_sasl | bool %},
+        {
+            "source": "{{ container_config_directory }}/sasl.conf",
+            "dest": "/etc/sasl2/libvirt.conf",
+            "owner": "root",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/auth.conf",
+            "dest": "/root/.config/libvirt/auth.conf",
+            "owner": "root",
+            "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+{#- The SPICE TLS bind-mounts below are owned root:nova with mode 0440
+    because qemu reads these files directly when starting the SPICE
+    server, and qemu runs as user 'nova' per qemu.conf. The libvirt_tls
+    certs above use 0600 owned root because libvirtd (running as root)
+    is the consumer for those, not qemu. -#}
+{% if nova_spice_require_secure | bool %},
+        {
+            "source": "{{ container_config_directory }}/serverkey.pem",
+            "dest": "/etc/pki/libvirt-spice/server-key.pem",
+            "owner": "root:nova",
+            "perm": "0440"
+        },
+        {
+            "source": "{{ container_config_directory }}/servercert.pem",
+            "dest": "/etc/pki/libvirt-spice/server-cert.pem",
+            "owner": "root:nova",
+            "perm": "0440"
+        },
+        {
+            "source": "{{ container_config_directory }}/cacert.pem",
+            "dest": "/etc/pki/libvirt-spice/ca-cert.pem",
+            "owner": "root:nova",
+            "perm": "0440"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/libvirt",
+            "owner": "root:kolla",
+            "perm": "2775"
+        }
+    ],
+    "files": [
+        {
+            "path": "/var/log/kolla/libvirt/libvirtd.log",
+            "owner": "root:kolla",
+            "perm": "0664"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/libvirt/*.log",
+            "owner": "root:kolla",
+            "perm": "0664"
+        }
+    ]
+}

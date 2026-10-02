@@ -1,16 +1,19 @@
 ---
-- include_tasks: register.yml
-  when: inventory_hostname in groups['blazar-api']
+- name: Register blazar in Keystone
+  ansible.builtin.import_tasks: register.yml
 
-- include_tasks: config.yml
-  when: inventory_hostname in groups['blazar-api'] or
-        inventory_hostname in groups['blazar-manager']
+- name: Configure blazar
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: clone.yml
+- name: Check blazar containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone blazar repository
+  ansible.builtin.include_tasks: clone.yml
   when: blazar_dev_mode | bool
 
-- include_tasks: bootstrap.yml
-  when: inventory_hostname in groups['blazar-api']
+- name: Bootstrap blazar service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

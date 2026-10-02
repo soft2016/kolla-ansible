@@ -1,0 +1,56 @@
+{
+    "command": "fluentd -c /etc/fluentd/fluentd.conf -o /var/log/kolla/fluentd/fluentd.log",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/fluentd.conf",
+            "dest": "/etc/fluentd/fluentd.conf",
+            "owner": "fluentd",
+            "perm": "0600"
+        }{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
+        }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/fluentd",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        }{% for facility in syslog_facilities | selectattr('enabled') %},
+        {
+            "path": "/var/log/kolla/{{ facility.logdir }}",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        }{% endfor %}
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/fluentd/*.log",
+            "owner": "fluentd:kolla",
+            "perm": "0664"
+        }{% for facility in syslog_facilities | selectattr('enabled') %},
+        {
+            "path": "/var/log/kolla/{{ facility.logdir }}/*.log",
+            "owner": "fluentd:kolla",
+            "perm": "0664"
+        }{% endfor %}{% if enable_fluentd_systemd | bool %},
+        {
+            "path": "/var/log/journal",
+            "owner": "fluentd:fluentd",
+            "recurse": true
+        }{% endif %},
+        {
+            "path": "/var/lib/fluentd/data",
+            "owner": "fluentd:fluentd",
+            "recurse": true
+        }
+    ]
+}

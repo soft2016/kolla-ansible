@@ -1,19 +1,20 @@
 ---
-- include_tasks: register.yml
-  when: inventory_hostname in groups['tacker-server']
+- name: Register tacker in Keystone
+  ansible.builtin.import_tasks: register.yml
 
-- include_tasks: config.yml
-  when: inventory_hostname in groups['tacker-server'] or
-        inventory_hostname in groups['tacker-conductor']
+- name: Configure tacker
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: clone.yml
+- name: Check tacker containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Clone tacker repository
+  ansible.builtin.include_tasks: clone.yml
   when:
     - tacker_dev_mode | bool
-    - inventory_hostname in groups['tacker-server'] or
-      inventory_hostname in groups['tacker-conductor']
 
-- include_tasks: bootstrap.yml
-  when: inventory_hostname in groups['tacker-server']
+- name: Bootstrap tacker service
+  ansible.builtin.import_tasks: bootstrap.yml
 
 - name: Flush handlers
-  meta: flush_handlers
+  ansible.builtin.meta: flush_handlers

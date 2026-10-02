@@ -1,32 +1,43 @@
 ---
 - project:
+    queue: kolla
     templates:
-      - openstack-python-jobs
-      - openstack-python35-jobs
-      - openstack-python36-jobs
-      - openstack-cover-jobs
+      - ansible-role-jobs
       - check-requirements
+      - kolla-ansible-scenario-multi-compute-ironic
+      - kolla-ansible-scenario-aio
+      - kolla-ansible-scenario-bifrost
+      - kolla-ansible-scenario-cells
+      - kolla-ansible-scenario-cephadm
+      - kolla-ansible-scenario-cloudkitty
+      # NOTE(mnasiadka): Failing since
+      # https://review.opendev.org/c/openstack/kolla-ansible/+/864780
+      # - kolla-ansible-scenario-container-engine-migration
+      - kolla-ansible-scenario-federation
+      - kolla-ansible-scenario-haproxy-fqdn
+      - kolla-ansible-scenario-kayobe
+      - kolla-ansible-scenario-openbao
+      - kolla-ansible-scenario-kvm
+      - kolla-ansible-scenario-lets-encrypt
+      - kolla-ansible-scenario-magnum
+      - kolla-ansible-scenario-mariadb
+      - kolla-ansible-scenario-masakari
+      - kolla-ansible-scenario-nfv
+      - kolla-ansible-scenario-ironic
+      # NOTE(mnasiadka): All runs end up with DISK_FULL
+      #- kolla-ansible-scenario-ipv6
+      - kolla-ansible-scenario-octavia
+      - kolla-ansible-scenario-ovn
+      - kolla-ansible-scenario-prometheus-opensearch
+      # NOTE(mnasiadka): SSO and non-SSO tests are failing
+      #- kolla-ansible-scenario-skyline
+      # NOTE: Master is not currently a SLURP release.
+      #- kolla-ansible-scenario-slurp
+      - kolla-ansible-scenario-telemetry
+      - openstack-cover-jobs
+      # NOTE: openstack-python3-jobs in 2026.2 cycle pulls in
+      #       3.11 which is not compatible with ansible-core 2.20+
+      - openstack-python3-jobs-kolla-ansible
+      - periodic-stable-jobs
       - publish-openstack-docs-pti
       - release-notes-jobs-python3
-      - deploy-guide-jobs
-    check:
-      jobs:
-        - kolla-ansible-centos-source
-        - kolla-ansible-ubuntu-source
-        - kolla-ansible-oraclelinux-source
-        - kolla-ansible-ubuntu-source-ceph
-        - kolla-ansible-centos-source-ceph
-        - kolla-ansible-oraclelinux-source-ceph
-        - kolla-ansible-bifrost-centos-source:
-            files: ^ansible\/roles\/bifrost\/.*
-        - kolla-ansible-ubuntu-source-zun:
-            files: ^ansible\/roles\/zun\/.*
-        - openstack-tox-lower-constraints
-    gate:
-      jobs:
-        - kolla-ansible-centos-source
-        - kolla-ansible-ubuntu-source
-        - openstack-tox-lower-constraints
-    periodic:
-      jobs:
-        - kolla-ansible-bifrost-centos-source

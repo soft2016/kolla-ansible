@@ -1,0 +1,37 @@
+{% if libvirt_tls | bool %}
+listen_tls = 1
+listen_tcp = 0
+tls_port = "{{ nova_libvirt_port }}"
+key_file = "/etc/pki/libvirt/private/serverkey.pem"
+cert_file = "/etc/pki/libvirt/servercert.pem"
+ca_file = "/etc/pki/CA/cacert.pem"
+auth_tls = "{{ 'sasl' if libvirt_enable_sasl | bool else 'none' }}"
+{% else %}
+listen_tcp = 1
+listen_tls = 0
+auth_tcp = "{{ 'sasl' if libvirt_enable_sasl | bool else 'none' }}"
+tcp_port = "{{ nova_libvirt_port }}"
+ca_file = ""
+{% endif %}
+{% if nova_libvirt_logging_debug | bool %}
+log_level = 1
+log_outputs = "1:file:/var/log/kolla/libvirt/libvirtd.log"
+{% else %}
+log_level = 3
+log_outputs = "3:file:/var/log/kolla/libvirt/libvirtd.log"
+{% endif %}
+listen_addr = "{{ migration_interface_address }}"
+{% if enable_neutron_mlnx | bool %}
+# Enable read-only access to libvirt socket
+auth_unix_ro = "none"
+{% endif %}
+
+# Connection processing limits. libvirt's defaults (max_workers=20,
+# max_client_requests=5) assume a multi-tenant host with many mutually
+# distrustful clients. Under Kolla, nova-compute is effectively the sole
+# privileged client, so the per-client cap of 5 becomes the binding
+# constraint: concurrent builds plus the resource-tracker periodic exceed
+# five in-flight RPCs and starve keepalive responses, causing libvirtd to
+# drop the connection after keepalive_interval (5s) x keepalive_count (5).
+max_workers = {{ libvirt_max_workers }}
+max_client_requests = {{ libvirt_max_client_requests }}

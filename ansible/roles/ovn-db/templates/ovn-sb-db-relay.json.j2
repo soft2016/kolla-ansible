@@ -1,0 +1,37 @@
+{
+    "command": "{{ ovn_sb_relay_command }}",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/ovsdb-relay.json",
+            "dest": "/etc/ovn/ovsdb-relay.json",
+            "owner": "root",
+            "perm": "0600"
+        }
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/openvswitch",
+            "owner": "openvswitch:kolla",
+            "perm": "2775"
+        }
+    ],
+    "files": [
+        {
+            "path": "/var/log/kolla/openvswitch/ovn-sb-relay-{{ ovn_sb_db_relay_group_id }}.log",
+            "owner": "openvswitch:kolla",
+            "perm": "0664"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/openvswitch/*.log",
+            "owner": "openvswitch:kolla",
+            "perm": "0664"
+        }
+    ]
+}

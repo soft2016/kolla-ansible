@@ -1,0 +1,19 @@
+---
+- name: Register placement in Keystone
+  ansible.builtin.import_tasks: register.yml
+
+- name: Clone placement repository
+  ansible.builtin.include_tasks: clone.yml
+  when: placement_dev_mode | bool
+
+- name: Configure placement
+  ansible.builtin.import_tasks: config.yml
+
+- name: Check placement containers
+  ansible.builtin.import_tasks: check-containers.yml
+
+- name: Bootstrap placement service
+  ansible.builtin.import_tasks: bootstrap.yml
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

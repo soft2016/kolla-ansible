@@ -1,8 +1,15 @@
 ---
-- name: Checking gnocchi backend for ceilometer
-  run_once: True
-  local_action: fail msg="gnocchi is required but not enabled"
+- name: Precheck ceilometer configuration
+  ansible.builtin.import_role:
+    name: service-precheck
+  vars:
+    service_precheck_services: "{{ ceilometer_services }}"
+    service_name: "{{ project_name }}"
+
+- name: Checking Ceilometer publishers
+  ansible.builtin.assert:
+    that:
+      - not (enable_ceilometer | bool) or enable_gnocchi | bool or enable_ceilometer_prometheus_pushgateway | bool
+    msg: "At least one Ceilometer publisher must be enabled"
+  run_once: true
   changed_when: false
-  when:
-    - enable_ceilometer | bool
-    - not enable_gnocchi | bool

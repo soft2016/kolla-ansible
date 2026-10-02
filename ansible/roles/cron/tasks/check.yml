@@ -1,0 +1,4 @@
+---
+- name: Checking Cron containers
+  ansible.builtin.import_role:
+    role: service-check

@@ -3,10 +3,10 @@
   vars:
     blazar_api: "{{ blazar_services['blazar-api'] }}"
   become: true
-  kolla_docker:
+  kolla_container:
     action: "start_container"
     common_options: "{{ docker_common_options }}"
-    detach: False
+    detach: false
     environment:
       KOLLA_BOOTSTRAP:
       KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
@@ -14,7 +14,7 @@
     labels:
       BOOTSTRAP:
     name: "bootstrap_blazar"
-    restart_policy: "never"
-    volumes: "{{ blazar_api.volumes|reject('equalto', '')|list }}"
-  run_once: True
+    restart_policy: oneshot
+    volumes: "{{ blazar_api.volumes | reject('equalto', '') | list }}"
+  run_once: true
   delegate_to: "{{ groups[blazar_api.group][0] }}"

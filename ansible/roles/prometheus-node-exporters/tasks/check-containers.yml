@@ -1,0 +1,4 @@
+---
+- name: Check prometheus-node-exporters containers
+  ansible.builtin.import_role:
+    name: service-check-containers

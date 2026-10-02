@@ -1,0 +1,58 @@
+---
+- name: "Get info on container for {{ service.container_name }}"
+  become: true
+  kolla_container_facts:
+    action: get_containers
+    container_engine: "{{ kolla_container_engine }}"
+    name:
+      - "{{ service.container_name }}"
+  register: container_info
+  until: container_info is not failed
+  retries: 5
+  delay: 3
+
+- name: "Validate configurations for {{ service.container_name }}"
+  become: true
+  ansible.builtin.command: >
+    {{ kolla_container_engine }} exec {{ service.container_name }}
+    bash -c "[[ -f {{ inner_item['config'] }} ]] && oslo-config-validator --config-file {{ inner_item['generator'] }} --input-file {{ inner_item['config'] }}"
+  when:
+    - container_info.containers | length > 0
+  register: result
+  until: result.rc in [0, 1]
+  retries: 5
+  delay: 3
+  failed_when: result.rc not in [0, 1]  # rc 1 is expected when errors are found in the config file, or when the config file doesn't exist
+  with_items: "{{ service_config_validation }}"
+  loop_control:
+    label: "{{ inner_item['config'] | basename }}"
+    loop_var: inner_item
+  changed_when: false
+
+- name: "Ensure log directory exists for {{ service.container_name }}"
+  become: true
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: "0755"
+  when:
+    - result.results | map(attribute='rc', default=0) | select('equalto', 1) | list | length > 0
+    - result.results | map(attribute='stderr', default="") | select('ne', "") | list | length > 0
+  delegate_to: localhost
+
+- name: "Log configuration errors for {{ service.container_name }}"
+  become: true
+  ansible.builtin.copy:
+    content: "{{ inner_item.stderr }}"
+    dest: "{{ output_dir }}/{{ inner_item.inner_item.config | basename }}.err"
+    mode: "0644"
+  when:
+    - container_info.containers | length > 0
+    - inner_item.rc is defined
+    - inner_item.rc == 1
+    - inner_item.stderr != ""
+  loop: "{{ result.results }}"
+  loop_control:
+    label: "{{ inner_item.inner_item.config | basename }}"
+    loop_var: inner_item
+  delegate_to: localhost

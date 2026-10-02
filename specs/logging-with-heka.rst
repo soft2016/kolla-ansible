@@ -167,7 +167,7 @@ Handling HAProxy and Keepalived
 
 As already mentioned HAProxy and Keepalived do not support logging to files.
 This means that some other mechanism should be used for these two services (and
-any other services that only suppport logging to Syslog).
+any other services that only support logging to Syslog).
 
 Our prototype has demonstrated that we can make Heka act as a Syslog server.
 This works by using Heka's ``UdpInput`` plugin with its ``net`` option set
@@ -304,10 +304,10 @@ The location of log files on the host will be mentioned in the documentation.
 References
 ==========
 
-[1] <https://review.openstack.org/#/c/252968/>
+[1] <https://review.opendev.org/#/c/252968/>
 [2] <http://hekad.readthedocs.org>
 [3] <http://blog.sematext.com/2015/09/28/recipe-rsyslog-redis-logstash/>
-[4] <https://review.openstack.org/#/c/269745/>
+[4] <https://review.opendev.org/#/c/269745/>
 [5] <http://hekad.readthedocs.org/en/latest/config/inputs/docker_log.html>
 [6] <http://hekad.readthedocs.org/en/latest/config/inputs/logstreamer.html>
-[7] <https://review.openstack.org/#/c/269952/>
+[7] <https://review.opendev.org/#/c/269952/>

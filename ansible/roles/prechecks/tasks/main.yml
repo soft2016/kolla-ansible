@@ -1,12 +1,32 @@
 ---
-- include_tasks: port_checks.yml
+- name: Include tasks from host_os_checks.yml
+  ansible.builtin.include_tasks: host_os_checks.yml
+  when: prechecks_enable_host_os_checks | bool
+
+- name: Include tasks from timesync_checks.yml
+  ansible.builtin.include_tasks: timesync_checks.yml
   when:
-    - inventory_hostname not in groups['deployment']|default([])
+    - inventory_hostname not in groups['deployment'] | default([])
 
-- include_tasks: service_checks.yml
+- name: Import tasks from datetime_checks.yml
+  ansible.builtin.import_tasks: datetime_checks.yml
 
-- include_tasks: package_checks.yml
+- name: Include tasks from port_checks.yml
+  ansible.builtin.include_tasks: port_checks.yml
+  when:
+    - inventory_hostname not in groups['deployment'] | default([])
 
-- include_tasks: user_checks.yml
+- name: Import tasks from service_checks.yml
+  ansible.builtin.import_tasks: service_checks.yml
 
-- include_tasks: database_checks.yml
+- name: Import tasks from package_checks.yml
+  ansible.builtin.import_tasks: package_checks.yml
+
+- name: Import tasks from user_checks.yml
+  ansible.builtin.import_tasks: user_checks.yml
+
+- name: Import tasks from database_checks.yml
+  ansible.builtin.import_tasks: database_checks.yml
+
+- name: Import tasks from registry_checks.yml
+  ansible.builtin.import_tasks: registry_checks.yml

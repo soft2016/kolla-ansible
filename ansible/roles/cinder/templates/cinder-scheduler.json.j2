@@ -12,16 +12,34 @@
             "dest": "/etc/cinder/{{ cinder_policy_file }}",
             "owner": "cinder",
             "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
         }{% endif %}
     ],
-    "permissions": [
+    "directories": [
         {
-            "path": "/var/lib/cinder",
-            "owner": "cinder:cinder",
-            "recurse": true
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
         },
         {
             "path": "/var/log/kolla/cinder",
+            "owner": "cinder:kolla",
+            "perm": "2775"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/cinder/*.log",
+            "owner": "cinder:kolla",
+            "perm": "0664"
+        },
+        {
+            "path": "/var/lib/cinder",
             "owner": "cinder:cinder",
             "recurse": true
         }

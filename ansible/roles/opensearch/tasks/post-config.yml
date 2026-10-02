@@ -1,0 +1,137 @@
+---
+- name: Wait for OpenSearch to become ready
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: uri
+    module_args:
+      url: "{{ opensearch_internal_endpoint }}/_cluster/stats"
+      status_code: 200
+      ca_path: "{{ openstack_cacert }}"
+  register: result
+  until: result.get('status') == 200
+  retries: 30
+  delay: 2
+  run_once: true
+  when: not ansible_check_mode
+
+- name: Wait for OpenSearch cluster to become healthy
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: uri
+    module_args:
+      url: "{{ opensearch_internal_endpoint }}/_cluster/health"
+      ca_path: "{{ openstack_cacert }}"
+  register: opensearch_result
+  until: opensearch_result.json.status != "red"
+  retries: 30
+  delay: 2
+  run_once: true
+  when: not ansible_check_mode
+
+- name: Check if a log retention policy exists
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: uri
+    module_args:
+      url: "{{ opensearch_internal_endpoint }}/_plugins/_ism/policies/retention"
+      method: GET
+      status_code: 200, 404
+      return_content: true
+      ca_path: "{{ openstack_cacert }}"
+  register: opensearch_retention_policy_check
+  delegate_to: "{{ groups['opensearch'][0] }}"
+  run_once: true
+
+- name: Create new log retention policy
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: uri
+    module_args:
+      url: "{{ opensearch_internal_endpoint }}/_plugins/_ism/policies/retention"
+      method: PUT
+      status_code: 201
+      return_content: true
+      body: "{{ opensearch_retention_policy | from_yaml | to_json }}"
+      body_format: json
+      ca_path: "{{ openstack_cacert }}"
+  register: opensearch_retention_policy_create
+  delegate_to: "{{ groups['opensearch'][0] }}"
+  run_once: true
+  changed_when: opensearch_retention_policy_create.status == 201
+  when:
+    - not ansible_check_mode
+    - opensearch_retention_policy_check.status == 404
+
+- name: Apply retention policy to existing indices
+  become: true
+  vars:
+    opensearch_set_policy_body: {"policy_id": "retention"}
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: uri
+    module_args:
+      url: "{{ opensearch_internal_endpoint }}/_plugins/_ism/add/{{ opensearch_log_index_prefix }}-*"
+      method: POST
+      status_code: 200
+      return_content: true
+      body: "{{ opensearch_set_policy_body | to_json }}"
+      body_format: json
+      ca_path: "{{ openstack_cacert }}"
+  delegate_to: "{{ groups['opensearch'][0] }}"
+  run_once: true
+  changed_when: opensearch_retention_policy_create.status == 201
+  when:
+    - not ansible_check_mode
+    - opensearch_retention_policy_check.status == 404
+
+- name: Wait for OpenSearch Dashboards API to become ready
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: uri
+    module_args:
+      url: "{{ opensearch_dashboards_internal_endpoint }}/api/status"
+      method: GET
+      status_code: 200
+      url_username: "{{ opensearch_dashboards_user }}"
+      url_password: "{{ opensearch_dashboards_password }}"
+      force_basic_auth: true
+      ca_path: "{{ openstack_cacert }}"
+  register: result
+  until: result.get('status') == 200
+  retries: 30
+  delay: 10
+  delegate_to: "{{ groups['opensearch'][0] }}"
+  run_once: true
+  when: not ansible_check_mode
+
+- name: Create OpenSearch Dashboards Index Pattern
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: uri
+    module_args:
+      url: "{{ opensearch_dashboards_internal_endpoint }}/api/saved_objects/index-pattern/{{ opensearch_log_index_prefix }}-pattern"
+      method: POST
+      status_code: 200, 409
+      url_username: "{{ opensearch_dashboards_user }}"
+      url_password: "{{ opensearch_dashboards_password }}"
+      force_basic_auth: true
+      headers:
+        osd-xsrf: "true"
+      body:
+        attributes:
+          title: "{{ opensearch_log_index_prefix }}-*"
+          timeFieldName: "@timestamp"
+      body_format: json
+      ca_path: "{{ openstack_cacert }}"
+  register: opensearch_index_pattern_create
+  changed_when: opensearch_index_pattern_create.status == 200
+  delegate_to: "{{ groups['opensearch'][0] }}"
+  run_once: true
+  when:
+    - not ansible_check_mode

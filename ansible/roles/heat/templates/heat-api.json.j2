@@ -1,9 +1,15 @@
 {
-    "command": "heat-api",
+    "command": "uwsgi /etc/heat/heat-api-uwsgi.ini",
     "config_files": [
         {
             "source": "{{ container_config_directory }}/heat.conf",
             "dest": "/etc/heat/heat.conf",
+            "owner": "heat",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/heat-api-uwsgi.ini",
+            "dest": "/etc/heat/heat-api-uwsgi.ini",
             "owner": "heat",
             "perm": "0600"
         }{% if heat_policy_file is defined %},
@@ -12,13 +18,43 @@
             "dest": "/etc/heat/{{ heat_policy_file }}",
             "owner": "heat",
             "perm": "0600"
+        }{% endif %}{% if heat_enable_tls_backend | bool %},
+        {
+            "source": "{{ container_config_directory }}/heat-cert.pem",
+            "dest": "/etc/heat/certs/heat-cert.pem",
+            "owner": "heat",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/heat-key.pem",
+            "dest": "/etc/heat/certs/heat-key.pem",
+            "owner": "heat",
+            "perm": "0600"
+        }{% endif %}{% if kolla_copy_ca_into_containers | bool %},
+        {
+            "source": "{{ container_config_directory }}/ca-certificates",
+            "dest": "/var/lib/kolla/share/ca-certificates",
+            "owner": "root",
+            "perm": "0644"
         }{% endif %}
+    ],
+    "directories": [
+        {
+            "path": "/var/log/kolla",
+            "owner": "fluentd:kolla",
+            "perm": "2775"
+        },
+        {
+            "path": "/var/log/kolla/heat",
+            "owner": "heat:kolla",
+            "perm": "2775"
+        }
     ],
     "permissions": [
         {
-            "path": "/var/log/kolla/heat",
-            "owner": "heat:heat",
-            "recurse": true
+            "path": "/var/log/kolla/heat/*.log",
+            "owner": "heat:kolla",
+            "perm": "0664"
         }
     ]
 }

@@ -1,12 +1,15 @@
 ---
-- include_tasks: config.yml
+- name: Configure mariadb
+  ansible.builtin.import_tasks: config.yml
 
-- include_tasks: bootstrap.yml
+- name: Check mariadb containers
+  ansible.builtin.import_tasks: check-containers.yml
 
-- name: Flush handlers
-  meta: flush_handlers
+- name: Import tasks from recover_cluster.yml
+  ansible.builtin.import_tasks: recover_cluster.yml
+  vars:
+    mariadb_cluster_exists: true
+  when: migration_flag is defined
 
-- include_tasks: register.yml
-
-# Test haproxy user through VIP
-- include_tasks: check.yml
+- name: Bootstrap mariadb service
+  ansible.builtin.import_tasks: bootstrap.yml

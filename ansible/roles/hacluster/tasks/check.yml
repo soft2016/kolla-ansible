@@ -1,0 +1,4 @@
+---
+- name: Checking Hacluster containers
+  ansible.builtin.import_role:
+    role: service-check

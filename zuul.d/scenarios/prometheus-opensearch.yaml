@@ -1,0 +1,74 @@
+---
+- job:
+    name: kolla-ansible-prometheus-opensearch-base
+    parent: kolla-ansible-base
+    files: !inherit
+      - ^ansible/group_vars/all/(common|fluentd|grafana|opensearch|prometheus).yml
+      - ^ansible/roles/(fluentd|grafana|kolla_toolbox|opensearch|prometheus|prometheus-node-exporters)/
+      - ^tests/test-prometheus-opensearch.sh
+    vars:
+      scenario: prometheus-opensearch
+      scenario_images_core:
+        - ^cron
+        - ^fluentd
+        - ^grafana
+        - ^haproxy
+        - ^keepalived
+        - ^kolla-toolbox
+        - ^mariadb
+        - ^memcached
+        - ^opensearch
+        - ^prometheus
+        - ^proxysql
+        - ^rabbitmq
+
+- job:
+    name: kolla-ansible-debian-trixie-prometheus-opensearch
+    parent: kolla-ansible-prometheus-opensearch-base
+    nodeset: kolla-ansible-debian-trixie-8GB
+
+- job:
+    name: kolla-ansible-debian-trixie-prometheus-opensearch-upgrade
+    parent: kolla-ansible-debian-trixie-prometheus-opensearch
+    nodeset: kolla-ansible-debian-trixie-8GB
+
+- job:
+    name: kolla-ansible-rocky-10-prometheus-opensearch
+    parent: kolla-ansible-prometheus-opensearch-base
+    nodeset: kolla-ansible-rocky-10-8GB
+
+- job:
+    name: kolla-ansible-rocky-10-prometheus-opensearch-upgrade
+    parent: kolla-ansible-rocky-10-prometheus-opensearch
+    nodeset: kolla-ansible-rocky-10-8GB
+
+- job:
+    name: kolla-ansible-ubuntu-noble-prometheus-opensearch
+    parent: kolla-ansible-prometheus-opensearch-base
+    nodeset: kolla-ansible-ubuntu-noble-8GB
+
+- job:
+    name: kolla-ansible-ubuntu-noble-prometheus-opensearch-upgrade
+    parent: kolla-ansible-ubuntu-noble-prometheus-opensearch
+    nodeset: kolla-ansible-ubuntu-noble-8GB
+
+- project-template:
+    name: kolla-ansible-scenario-prometheus-opensearch
+    description: |
+      Runs Kolla-Ansible Prometheus OpenSearch scenario jobs.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie-prometheus-opensearch
+        - kolla-ansible-debian-trixie-prometheus-opensearch-upgrade
+        - kolla-ansible-rocky-10-prometheus-opensearch
+        - kolla-ansible-rocky-10-prometheus-opensearch-upgrade
+        - kolla-ansible-ubuntu-noble-prometheus-opensearch
+        - kolla-ansible-ubuntu-noble-prometheus-opensearch-upgrade
+    gate:
+      jobs:
+        - kolla-ansible-debian-trixie-prometheus-opensearch
+        - kolla-ansible-debian-trixie-prometheus-opensearch-upgrade
+        - kolla-ansible-rocky-10-prometheus-opensearch
+        - kolla-ansible-rocky-10-prometheus-opensearch-upgrade
+        - kolla-ansible-ubuntu-noble-prometheus-opensearch
+        - kolla-ansible-ubuntu-noble-prometheus-opensearch-upgrade
